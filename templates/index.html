@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — AI Trading Autopilot{% endblock %}
+
+{% block content %}
+  <header class="page-header">
+    <h1>Dashboard</h1>
+    <div class="header-meta">
+      <span class="badge {% if env == 'LIVE' %}live{% else %}demo{% endif %}">{{ env }}</span>
+      {% if state.running %}
+      <span class="badge running">Running</span>
+      {% else %}
+      <span class="badge stopped">Stopped</span>
+      {% endif %}
+      <span class="badge risk-{{ state.risk }}">Risk: {{ state.risk }}</span>
+      <span class="badge">Every {{ interval }} min</span>
+    </div>
+  </header>
+
+  {% if error %}
+  <div class="alert alert-error">
+    <strong>Could not load portfolio.</strong> {{ error }}
+  </div>
+  {% endif %}
+
+  <div class="card controls-card">
+    <h2>Autopilot controls</h2>
+    <div class="control-row">
+      <form method="post" action="/risk" class="risk-form">
+        <label for="risk">Risk level</label>
+        <select name="risk" id="risk">
+          <option value="low" {% if state.risk == 'low' %}selected{% endif %}>Low — conservative</option>
+          <option value="medium" {% if state.risk == 'medium' %}selected{% endif %}>Medium — balanced</option>
+          <option value="high" {% if state.risk == 'high' %}selected{% endif %}>High — aggressive</option>
+        </select>
+        <button type="submit" class="btn-secondary">Apply</button>
+      </form>
+      <div class="actions">
+        {% if state.running %}
+        <form method="post" action="/stop" class="inline">
+          <button type="submit" class="btn-danger">Stop</button>
+        </form>
+        {% else %}
+        <form method="post" action="/start" class="inline">
+          <input type="hidden" name="risk" value="{{ state.risk }}">
+          <button type="submit" class="btn-primary">Start autopilot</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/run-once" class="inline">
+          <input type="hidden" name="risk" value="{{ state.risk }}">
+          <button type="submit" class="btn-secondary">Run once</button>
+        </form>
+      </div>
+    </div>
+
+    {% if state.last_run or state.last_summary or state.last_error %}
+    <div class="status-info">
+      {% if state.last_run %}
+      <div class="status-line">Last run: <strong>{{ state.last_run }}</strong></div>
+      {% endif %}
+      {% if state.last_summary %}
+      <div class="status-line">Result: <strong>{{ state.last_summary }}</strong></div>
+      {% endif %}
+      {% if state.last_error %}
+      <div class="alert alert-error" style="margin-top:0.5rem;margin-bottom:0">{{ state.last_error }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if account %}
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Portfolio value</div>
+      <div class="stat-value">{{ "%.2f"|format(account.total_value) }} <span class="stat-currency">{{ account.currency }}</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Cash available</div>
+      <div class="stat-value">{{ "%.2f"|format(account.cash_available) }} <span class="stat-currency">{{ account.currency }}</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Invested</div>
+      <div class="stat-value">{{ "%.1f"|format((1 - allocation.get('CASH', 0)) * 100) }}<span class="stat-currency">%</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Open positions</h2>
+    {% if positions %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Value</th>
+            <th>P&amp;L</th>
+            <th>Weight</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pos in positions %}
+          <tr>
+            <td><span class="ticker">{{ pos.ticker }}</span></td>
+            <td>{{ "%.4f"|format(pos.quantity) }}</td>
+            <td>{{ "%.2f"|format(pos.current_price) }}</td>
+            <td>{{ "%.2f"|format(pos.value) }}</td>
+            <td class="{% if pos.pnl >= 0 %}pnl-pos{% else %}pnl-neg{% endif %}">{{ "%.2f"|format(pos.pnl) }}</td>
+            <td>{{ "%.1f"|format(allocation.get(pos.ticker, 0) * 100) }}%</td>
+          </tr>
+          {% endfor %}
+          <tr>
+            <td><span class="ticker">CASH</span></td>
+            <td colspan="4"></td>
+            <td><strong>{{ "%.1f"|format(allocation.get("CASH", 0) * 100) }}%</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">📭</div>
+      <p>No open positions yet. Start the autopilot to begin.</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Trade History — AI Trading Autopilot{% endblock %}
+
+{% block content %}
+  <header class="page-header">
+    <h1>Trade history</h1>
+    <div class="header-meta">
+      <span class="badge {% if env == 'LIVE' %}live{% else %}demo{% endif %}">{{ env }}</span>
+      <span class="badge">{{ trades | length }} trades</span>
+    </div>
+  </header>
+
+  <div class="card">
+    {% if trades %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Type</th>
+            <th>Ticker</th>
+            <th>Side</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Amount</th>
+            <th>Env</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in trades %}
+          <tr>
+            <td class="time-cell">{{ t.timestamp[:19] | replace('T', ' ') }}</td>
+            <td><span class="tag {{ t.type }}">{{ t.type }}</span></td>
+            <td><span class="ticker">{{ t.ticker }}</span></td>
+            <td class="{{ t.action }}">{{ t.action | upper }}</td>
+            <td>{{ "%.4f"|format(t.quantity) }}</td>
+            <td>{{ "%.2f"|format(t.price) }}</td>
+            <td>{{ "%.2f"|format(t.amount) }}</td>
+            <td><span class="badge {% if t.where == 'LIVE' %}live{% else %}demo{% endif %}" style="font-size:0.65rem">{{ t.where }}</span></td>
+            <td class="reason-cell">{{ t.reason }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">📋</div>
+      <p>No trades recorded yet.</p>
+    </div>
+    {% endif %}
+  </div>
+{% endblock %}

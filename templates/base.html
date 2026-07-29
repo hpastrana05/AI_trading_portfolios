@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AI Trading Autopilot{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="page">
+    <nav class="topnav">
+      <a href="/" class="brand">
+        <div class="brand-icon">⚡</div>
+        <div>
+          <div class="brand-text">Autopilot</div>
+          <div class="brand-sub">AI portfolio manager</div>
+        </div>
+      </a>
+      <div class="nav-links">
+        <a href="/" class="{% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="/history" class="{% if active == 'history' %}active{% endif %}">History</a>
+        <a href="/memory" class="{% if active == 'memory' %}active{% endif %}">Memory</a>
+      </div>
+    </nav>
+    {% block content %}{% endblock %}
+  </div>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

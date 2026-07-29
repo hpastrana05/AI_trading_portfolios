@@ -1,0 +1,14 @@
+services:
+  autopilot:
+    build: .
+    container_name: ai-trading-autopilot
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${APP_PORT:-8100}:8100"
+    volumes:
+      - ./data:/app/data
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8100
+      DATA_DIR: /app/data

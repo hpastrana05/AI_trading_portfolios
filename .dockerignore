@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+data/
+decisions.jsonl
+instruments_cache.json
+README.md
+.cursor/
+*.md

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}AI Memory — AI Trading Autopilot{% endblock %}
+
+{% block content %}
+  <header class="page-header">
+    <h1>AI memory</h1>
+    <div class="header-meta">
+      <span class="badge {% if env == 'LIVE' %}live{% else %}demo{% endif %}">{{ env }}</span>
+      {% if memory.updated_at %}
+      <span class="badge">Updated {{ memory.updated_at[:19] | replace('T', ' ') }}</span>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="memory-grid">
+    <div class="card memory-section">
+      <h2>Portfolio thesis</h2>
+      <p>{{ memory.portfolio_thesis }}</p>
+    </div>
+
+    <div class="card memory-section">
+      <h2>Management plan</h2>
+      <p>{{ memory.management_plan }}</p>
+    </div>
+
+    <div class="card memory-section">
+      <h2>Notes</h2>
+      <p>{{ memory.notes or '—' }}</p>
+    </div>
+
+    <div class="card memory-section">
+      <h2>Lessons learned</h2>
+      {% if memory.lessons %}
+      <ul>
+        {% for lesson in memory.lessons %}
+        <li>{{ lesson }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty" style="padding:1rem">
+        <p>None yet — the AI will add lessons as it trades.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card memory-section">
+      <h2>Thinking log</h2>
+      {% if memory.thinking_log %}
+      {% for entry in memory.thinking_log | reverse %}
+      <div class="thinking-entry">
+        <div class="time-cell">{{ entry.at[:19] | replace('T', ' ') }} UTC</div>
+        <pre>{{ entry.text }}</pre>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="empty" style="padding:1rem">
+        <p>No thinking recorded yet.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}
