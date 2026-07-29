@@ -8,17 +8,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_PORT=8100 \
     DATA_DIR=/app/data
 
-RUN useradd --create-home --shell /bin/bash appuser
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 1000 --create-home --shell /bin/bash appuser
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/data && chown -R appuser:appuser /app
-
-USER appuser
+RUN chmod +x /app/docker-entrypoint.sh \
+    && mkdir -p /app/data \
+    && chown -R appuser:appuser /app
 
 EXPOSE 8100
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8100"]

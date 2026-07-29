@@ -23,8 +23,11 @@ uvicorn main:app --host 0.0.0.0 --port 8100
 Or with Docker:
 
 ```bash
+mkdir -p data
 docker compose up -d --build
 ```
+
+The container entrypoint fixes `./data` permissions on startup (common issue on Pi when the folder is owned by root).
 
 ## How it works
 
