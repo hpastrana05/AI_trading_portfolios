@@ -12,3 +12,5 @@ services:
       APP_HOST: 0.0.0.0
       APP_PORT: 8100
       DATA_DIR: /app/data
+      TZ: Europe/Madrid
+      APP_TZ: Europe/Madrid

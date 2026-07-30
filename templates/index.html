@@ -13,7 +13,10 @@
       <span class="badge stopped">Stopped</span>
       {% endif %}
       <span class="badge risk-{{ state.risk }}">Risk: {{ state.risk }}</span>
-      <span class="badge">Every {{ interval }} min (clock-aligned)</span>
+      <span class="badge">Every {{ interval }} min (weekdays)</span>
+      {% if weekend %}
+      <span class="badge stopped">Weekend pause</span>
+      {% endif %}
     </div>
   </header>
 
@@ -57,6 +60,9 @@
     <div class="status-info">
       {% if state.last_run %}
       <div class="status-line">Last run: <strong>{{ state.last_run | local_time }}</strong></div>
+      {% endif %}
+      {% if next_run %}
+      <div class="status-line">Next run: <strong>{{ next_run | local_time }}</strong></div>
       {% endif %}
       {% if state.last_summary %}
       <div class="status-line">Result: <strong>{{ state.last_summary }}</strong></div>

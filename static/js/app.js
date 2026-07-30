@@ -21,6 +21,53 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Floating Why? popovers on History — no table layout shift.
+  const whyPopovers = Array.from(document.querySelectorAll(".why-popover"));
+  function closeAllWhy(except = null) {
+    whyPopovers.forEach((wrap) => {
+      if (wrap === except) return;
+      const btn = wrap.querySelector(".why-btn");
+      const panel = wrap.querySelector(".why-panel");
+      if (btn) btn.setAttribute("aria-expanded", "false");
+      if (panel) panel.hidden = true;
+    });
+  }
+  function placeWhyPanel(btn, panel) {
+    const rect = btn.getBoundingClientRect();
+    const width = Math.min(380, window.innerWidth - 24);
+    let left = rect.right - width;
+    if (left < 12) left = 12;
+    let top = rect.bottom + 8;
+    panel.hidden = false;
+    const height = panel.offsetHeight;
+    if (top + height > window.innerHeight - 12) {
+      top = Math.max(12, rect.top - height - 8);
+    }
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.width = `${width}px`;
+  }
+  whyPopovers.forEach((wrap) => {
+    const btn = wrap.querySelector(".why-btn");
+    const panel = wrap.querySelector(".why-panel");
+    if (!btn || !panel) return;
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const open = btn.getAttribute("aria-expanded") === "true";
+      closeAllWhy();
+      if (!open) {
+        btn.setAttribute("aria-expanded", "true");
+        placeWhyPanel(btn, panel);
+      }
+    });
+    panel.addEventListener("click", (event) => event.stopPropagation());
+  });
+  document.addEventListener("click", () => closeAllWhy());
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeAllWhy();
+  });
+  window.addEventListener("scroll", () => closeAllWhy(), true);
+  window.addEventListener("resize", () => closeAllWhy());
   const canvas = document.getElementById("performance-chart");
   if (!canvas) {
     return;

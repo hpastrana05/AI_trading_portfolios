@@ -70,3 +70,19 @@ def missed_schedule(last_run_iso: str | None, interval_minutes: int | None = Non
     if last_run is None:
         return True
     return last_run < due
+
+
+def is_weekend(moment: datetime | None = None) -> bool:
+    moment = moment or now()
+    return moment.weekday() >= 5  # Saturday=5, Sunday=6
+
+
+def next_trading_aligned(moment: datetime | None = None, interval_minutes: int | None = None) -> datetime:
+    """Next aligned slot that falls on a weekday."""
+    t = next_aligned(moment, interval_minutes)
+    while is_weekend(t):
+        # Jump to Monday 00:00, then take the next aligned slot.
+        days = 7 - t.weekday()  # Sat -> 2, Sun -> 1
+        monday = (t + timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
+        t = next_aligned(monday - timedelta(seconds=1), interval_minutes)
+    return t

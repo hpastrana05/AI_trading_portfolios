@@ -7,11 +7,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css?v=why4">
 </head>
 <body>
-  <div class="page">
-    <nav class="topnav">
+  <div class="app-shell">
+    <aside class="sidebar">
       <a href="/" class="brand">
         <div class="brand-icon">⚡</div>
         <div>
@@ -19,15 +19,29 @@
           <div class="brand-sub">AI portfolio manager</div>
         </div>
       </a>
-      <div class="nav-links">
-        <a href="/" class="{% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
-        <a href="/performance" class="{% if active == 'performance' %}active{% endif %}">Performance</a>
-        <a href="/history" class="{% if active == 'history' %}active{% endif %}">History</a>
-        <a href="/memory" class="{% if active == 'memory' %}active{% endif %}">Memory</a>
+
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <div class="nav-group-label">Portfolio</div>
+          <a href="/" class="nav-item {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+          <a href="/performance" class="nav-item {% if active == 'performance' %}active{% endif %}">Performance</a>
+          <a href="/history" class="nav-item {% if active == 'history' %}active{% endif %}">History</a>
+          <a href="/memory" class="nav-item {% if active == 'memory' %}active{% endif %}">Memory</a>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-label">System</div>
+          <a href="/settings" class="nav-item {% if active == 'settings' %}active{% endif %}">Guardrails</a>
+          <a href="/usage" class="nav-item {% if active == 'usage' %}active{% endif %}">AI usage</a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <div class="main-inner">
+        {% block content %}{% endblock %}
       </div>
-    </nav>
-    {% block content %}{% endblock %}
+    </main>
   </div>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=why4"></script>
 </body>
 </html>

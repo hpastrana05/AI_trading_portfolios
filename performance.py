@@ -5,7 +5,9 @@ from zoneinfo import ZoneInfo
 import config
 import timeutil
 
-SNAPSHOTS_PATH = config.DATA_DIR / "portfolio_snapshots.jsonl"
+
+def _snapshots_path():
+    return config.env_data_dir() / "portfolio_snapshots.jsonl"
 
 
 def record_snapshot(account: dict) -> None:
@@ -17,8 +19,9 @@ def record_snapshot(account: dict) -> None:
         "timestamp": timeutil.now_iso(),
         "total_value": total_value,
         "currency": account.get("currency", ""),
+        "env": config.T212_ENV,
     }
-    with open(SNAPSHOTS_PATH, "a", encoding="utf-8") as f:
+    with open(_snapshots_path(), "a", encoding="utf-8") as f:
         f.write(json.dumps(payload) + "\n")
 
 
@@ -30,11 +33,12 @@ def _parse_ts(value: str) -> datetime:
 
 
 def _read_snapshots() -> list[dict]:
-    if not SNAPSHOTS_PATH.exists():
+    path = _snapshots_path()
+    if not path.exists():
         return []
 
     rows: list[dict] = []
-    with open(SNAPSHOTS_PATH, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:

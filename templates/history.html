@@ -8,6 +8,7 @@
     <div class="header-meta">
       <span class="badge {% if env == 'LIVE' %}live{% else %}demo{% endif %}">{{ env }}</span>
       <span class="badge">{{ trades | length }} trades</span>
+      <span class="badge">Data: {{ env | lower }} only</span>
     </div>
   </header>
 
@@ -24,8 +25,7 @@
             <th>Qty</th>
             <th>Price</th>
             <th>Amount</th>
-            <th>Env</th>
-            <th>Reason</th>
+            <th>Why</th>
           </tr>
         </thead>
         <tbody>
@@ -38,8 +38,27 @@
             <td>{{ "%.4f"|format(t.quantity) }}</td>
             <td>{{ "%.2f"|format(t.price) }}</td>
             <td>{{ "%.2f"|format(t.amount) }}</td>
-            <td><span class="badge {% if t.where == 'LIVE' %}live{% else %}demo{% endif %}" style="font-size:0.65rem">{{ t.where }}</span></td>
-            <td class="reason-cell">{{ t.reason }}</td>
+            <td class="reason-cell">
+              <div class="why-popover">
+                <button type="button" class="why-btn" aria-expanded="false">Why?</button>
+                <div class="why-panel" hidden>
+                  <p><strong>Trade reason:</strong> {{ t.reason or '—' }}</p>
+                  {% if t.cycle_reasoning %}
+                  <p><strong>Cycle summary:</strong> {{ t.cycle_reasoning }}</p>
+                  {% endif %}
+                  {% if t.pick_reasoning %}
+                  <p><strong>Pick reasoning:</strong> {{ t.pick_reasoning }}</p>
+                  {% endif %}
+                  {% if t.thinking %}
+                  <p><strong>Thinking:</strong></p>
+                  <pre>{{ t.thinking }}</pre>
+                  {% endif %}
+                  {% if t.cycle_id %}
+                  <p class="meta">Cycle: {{ t.cycle_id }}</p>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -48,7 +67,7 @@
     {% else %}
     <div class="empty">
       <div class="empty-icon">📋</div>
-      <p>No trades recorded yet.</p>
+      <p>No trades recorded yet for {{ env }}.</p>
     </div>
     {% endif %}
   </div>

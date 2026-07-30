@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}AI Usage — AI Trading Autopilot{% endblock %}
+
+{% block content %}
+  <header class="page-header">
+    <h1>AI usage</h1>
+    <div class="header-meta">
+      <span class="badge {% if env == 'LIVE' %}live{% else %}demo{% endif %}">{{ env }}</span>
+      <span class="badge">Free tier</span>
+      <span class="badge">{{ usage.calls_per_cycle }} calls / cycle</span>
+    </div>
+  </header>
+
+  {% if not usage.budget_ok %}
+  <div class="alert alert-error"><strong>Budget tight.</strong> {{ usage.budget_msg }}</div>
+  {% else %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">{{ usage.budget_msg }} · ~{{ usage.cycles_left_today }} cycles left today</div>
+  {% endif %}
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Today calls</div>
+      <div class="stat-value">{{ usage.today_calls }} <span class="stat-currency">/ {{ usage.preferred_limits.rpd }} RPD</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Cycles left (est.)</div>
+      <div class="stat-value">{{ usage.cycles_left_today }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Preferred model</div>
+      <div class="stat-value" style="font-size:1rem">{{ usage.preferred_model }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Today tokens</div>
+      <div class="stat-value">{{ usage.today_tokens }}</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Free-tier limits</h2>
+    <p class="meta" style="margin-bottom:0.75rem">{{ usage.note }}</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Model family</th>
+            <th>RPM</th>
+            <th>TPM</th>
+            <th>RPD</th>
+            <th>Used today</th>
+            <th>Left</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in usage.free_limits %}
+          <tr>
+            <td class="ticker">{{ row.family }}</td>
+            <td>{{ row.rpm }}</td>
+            <td>{{ row.tpm }}</td>
+            <td>{{ row.rpd }}</td>
+            <td>{{ row.rpd_used }}</td>
+            <td class="{% if row.rpd_left < usage.calls_per_cycle %}pnl-neg{% else %}pnl-pos{% endif %}">{{ row.rpd_left }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>By model</h2>
+    {% if usage.by_model %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Model</th><th>Today</th><th>Total calls</th><th>Est. cost</th></tr></thead>
+        <tbody>
+          {% for model, row in usage.by_model.items() %}
+          <tr>
+            <td class="ticker">{{ model }}</td>
+            <td>{{ row.today_calls }}</td>
+            <td>{{ row.calls }}</td>
+            <td>${{ "%.4f"|format(row.cost_usd) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty"><p>No AI calls logged yet.</p></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>By environment</h2>
+    {% if usage.by_env %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Env</th><th>Calls</th><th>Est. cost</th></tr></thead>
+        <tbody>
+          {% for env_name, row in usage.by_env.items() %}
+          <tr>
+            <td><span class="badge {% if env_name == 'LIVE' %}live{% else %}demo{% endif %}">{{ env_name }}</span></td>
+            <td>{{ row.calls }}</td>
+            <td>${{ "%.4f"|format(row.cost_usd) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty"><p>No usage by environment yet.</p></div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Recent calls</h2>
+    {% if usage.recent %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>When</th><th>Env</th><th>Purpose</th><th>Model</th><th>Tokens</th><th>Est. $</th><th>OK</th></tr>
+        </thead>
+        <tbody>
+          {% for row in usage.recent %}
+          <tr>
+            <td class="time-cell">{{ row.timestamp | local_time }}</td>
+            <td>{{ row.env }}</td>
+            <td>{{ row.purpose }}</td>
+            <td class="ticker">{{ row.model }}</td>
+            <td>{{ row.input_tokens }}/{{ row.output_tokens }}</td>
+            <td>${{ "%.5f"|format(row.cost_usd or 0) }}</td>
+            <td>{% if row.ok %}yes{% else %}no{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty"><p>No recent calls.</p></div>
+    {% endif %}
+  </div>
+{% endblock %}

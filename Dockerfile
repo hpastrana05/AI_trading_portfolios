@@ -9,9 +9,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DATA_DIR=/app/data
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu \
+    && apt-get install -y --no-install-recommends gosu tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 1000 --create-home --shell /bin/bash appuser
+
+ENV TZ=Europe/Madrid
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

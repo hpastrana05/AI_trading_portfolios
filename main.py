@@ -3,18 +3,19 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import JSONResponse
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import autopilot
 import config
+import guardrails
 import journal
 import memory
 import performance
 import t212
 import timeutil
+import usage
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -42,8 +43,6 @@ def _get_positions_cached() -> list[dict]:
 async def lifespan(app: FastAPI):
     state = autopilot.load_state()
     if state.get("running"):
-        # Resume on Docker restart: catch up once only if a slot was missed,
-        # then wait for the next aligned clock time.
         autopilot.start(state.get("risk", "medium"), force_run=False)
     yield
 
@@ -70,6 +69,10 @@ def index(request: Request):
     except Exception as exc:
         error = str(exc)
 
+    next_run = None
+    if state.get("running"):
+        next_run = timeutil.next_trading_aligned().isoformat()
+
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -82,6 +85,8 @@ def index(request: Request):
             "env": config.T212_ENV,
             "state": state,
             "interval": config.AUTOPILOT_INTERVAL_MINUTES,
+            "next_run": next_run,
+            "weekend": timeutil.is_weekend(),
             "error": error,
         },
     )
@@ -110,7 +115,7 @@ def run_once_endpoint(risk: str = Form(None)):
     try:
         autopilot.run_once(risk)
     except Exception:
-        pass  # error saved to state by autopilot
+        pass
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -150,6 +155,72 @@ def performance_page(request: Request):
 def performance_api(range: str = "max"):
     data = performance.build_performance(range)
     return JSONResponse(data)
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, saved: int = 0, error: str | None = None):
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "active": "settings",
+            "env": config.T212_ENV,
+            "rules": guardrails.load(),
+            "saved": bool(saved),
+            "error": error,
+        },
+    )
+
+
+@app.post("/settings")
+def settings_save(
+    request: Request,
+    max_position_pct: str = Form(""),
+    min_cash_pct: str = Form(""),
+    max_trades_per_day: str = Form(""),
+    max_order_amount: str = Form(""),
+):
+    try:
+        guardrails.save(
+            {
+                "max_position_pct": max_position_pct,
+                "min_cash_pct": min_cash_pct,
+                "max_trades_per_day": max_trades_per_day,
+                "max_order_amount": max_order_amount,
+            }
+        )
+        return RedirectResponse(url="/settings?saved=1", status_code=303)
+    except Exception as exc:
+        return templates.TemplateResponse(
+            request,
+            "settings.html",
+            {
+                "active": "settings",
+                "env": config.T212_ENV,
+                "rules": {
+                    "max_position_pct": max_position_pct or None,
+                    "min_cash_pct": min_cash_pct or None,
+                    "max_trades_per_day": max_trades_per_day or None,
+                    "max_order_amount": max_order_amount or None,
+                },
+                "saved": False,
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+
+@app.get("/usage", response_class=HTMLResponse)
+def usage_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "usage.html",
+        {
+            "active": "usage",
+            "env": config.T212_ENV,
+            "usage": usage.summary(),
+        },
+    )
 
 
 if __name__ == "__main__":

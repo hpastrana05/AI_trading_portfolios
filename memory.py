@@ -1,10 +1,12 @@
 import json
-from pathlib import Path
 
 import config
 import timeutil
 
-MEMORY_PATH = config.DATA_DIR / "ai_memory.json"
+
+def _memory_path():
+    return config.env_data_dir() / "ai_memory.json"
+
 
 DEFAULT_MEMORY = {
     "portfolio_thesis": "Starting fresh. Build a diversified portfolio aligned with the selected risk level.",
@@ -17,10 +19,11 @@ DEFAULT_MEMORY = {
 
 
 def load() -> dict:
-    if not MEMORY_PATH.exists():
+    path = _memory_path()
+    if not path.exists():
         return dict(DEFAULT_MEMORY)
     try:
-        data = json.loads(MEMORY_PATH.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
         merged = dict(DEFAULT_MEMORY)
         merged.update(data)
         return merged
@@ -30,7 +33,7 @@ def load() -> dict:
 
 def save(data: dict) -> None:
     data["updated_at"] = timeutil.now_iso()
-    MEMORY_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _memory_path().write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def apply_update(update: dict, thinking: str = "") -> dict:

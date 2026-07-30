@@ -10,6 +10,7 @@
       {% if memory.updated_at %}
       <span class="badge">Updated {{ memory.updated_at | local_time }}</span>
       {% endif %}
+      <span class="badge">Data: {{ env | lower }} only</span>
     </div>
   </header>
 

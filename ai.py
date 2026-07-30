@@ -1,11 +1,14 @@
 import json
 import re
+import uuid
 from pathlib import Path
 
 from google import genai
 
 import config
+import guardrails
 import timeutil
+import usage
 
 _client_instance: genai.Client | None = None
 _active_model: str | None = None
@@ -26,25 +29,48 @@ def _model_candidates() -> list[str]:
     return config.GEMINI_MODEL_FALLBACKS
 
 
-def _generate(prompt: str):
+def _usage_from_response(response) -> tuple[int, int]:
+    meta = getattr(response, "usage_metadata", None)
+    if meta is None:
+        return 0, 0
+    inp = int(getattr(meta, "prompt_token_count", 0) or 0)
+    out = int(getattr(meta, "candidates_token_count", 0) or 0)
+    if not out:
+        out = int(getattr(meta, "output_token_count", 0) or 0)
+    return inp, out
+
+
+def _generate(prompt: str, purpose: str = "unknown"):
     global _active_model
     errors: list[str] = []
 
     if _active_model:
         try:
-            return _client().models.generate_content(
+            response = _client().models.generate_content(
                 model=_active_model,
                 contents=prompt,
             )
-        except Exception:
+            inp, out = _usage_from_response(response)
+            usage.log_call(model=_active_model, purpose=purpose, input_tokens=inp, output_tokens=out)
+            return response
+        except Exception as exc:
+            usage.log_call(
+                model=_active_model or "unknown",
+                purpose=purpose,
+                ok=False,
+                error=str(exc),
+            )
             _active_model = None
 
     for model in _model_candidates():
         try:
             response = _client().models.generate_content(model=model, contents=prompt)
             _active_model = model
+            inp, out = _usage_from_response(response)
+            usage.log_call(model=model, purpose=purpose, input_tokens=inp, output_tokens=out)
             return response
         except Exception as exc:
+            usage.log_call(model=model, purpose=purpose, ok=False, error=str(exc))
             errors.append(f"{model}: {exc}")
 
     raise RuntimeError("No Gemini model available. Tried: " + "; ".join(errors))
@@ -80,12 +106,13 @@ def gemini_pick_symbols(
     prompt = f"""You manage a Trading212 portfolio autonomously.
 {strategy}
 Pick up to {max_picks} stock/ETF symbols (short names only, e.g. AAPL, VOO — NOT exchange suffixes).
-You decide position count and sizing later — pick the best universe for this strategy.{holdings}{mem}
+You decide position count and sizing later — pick the best universe for this strategy.
+If the current holdings already fit the strategy, you may keep the same symbols.{holdings}{mem}
 
 Respond with ONLY valid JSON:
 {{"symbols": ["VOO", "QQQ"], "pick_reasoning": "..."}}"""
 
-    response = _generate(prompt)
+    response = _generate(prompt, purpose="pick_symbols")
     data = _parse_json(response.text)
     symbols = [str(s).strip().upper() for s in data.get("symbols", []) if str(s).strip()]
     return {
@@ -105,7 +132,7 @@ def gemini_research(instruments: list[dict], strategy: str, memory: dict | None 
         + f"{mem}\n"
         "For each: context, sentiment, risks. Be concise. Plain text only."
     )
-    response = _generate(prompt)
+    response = _generate(prompt, purpose="research")
     return response.text
 
 
@@ -131,26 +158,30 @@ def gemini_decide(
             f"Lessons: {json.dumps(memory.get('lessons', []))}\n"
             f"Notes: {memory.get('notes', '')}"
         )
+    rules_text = guardrails.prompt_text()
 
     prompt = f"""You fully manage this Trading212 portfolio. Risk level: {risk.upper()}.
 {strategy}
+{rules_text}
 You control allocation, position sizes, cash level, entries and exits.
 Only use these exact Trading212 tickers plus CASH:
 {catalog}
 Allowed: {", ".join(allowed)} and CASH.
 Weights must sum to 1.0.
-Include estimated_prices for tickers not currently held.{allocation_hint}{mem}
+Include estimated_prices for tickers not currently held.
+IMPORTANT: If no rebalance is needed, set "no_changes": true, keep allocation close to current, and explain why you are holding. Do not force trades.{allocation_hint}{mem}
 
 Research:
 {research}
 
 Respond with ONLY valid JSON:
 {{
+  "no_changes": false,
   "allocation": {{"TICKER_US_EQ": 0.XX, "CASH": 0.XX}},
   "estimated_prices": {{"TICKER_US_EQ": 123.45}},
   "reasoning": "overall decision summary",
   "thinking": "detailed thinking about portfolio management",
-  "trade_reasons": [{{"ticker": "TICKER_US_EQ", "action": "buy|sell", "reason": "why"}}],
+  "trade_reasons": [{{"ticker": "TICKER_US_EQ", "action": "buy|sell|hold", "reason": "why"}}],
   "memory_update": {{
     "portfolio_thesis": "updated thesis",
     "management_plan": "how you will manage going forward",
@@ -159,7 +190,7 @@ Respond with ONLY valid JSON:
   }}
 }}"""
 
-    response = _generate(prompt)
+    response = _generate(prompt, purpose="decide")
     return _parse_json(response.text)
 
 
@@ -190,11 +221,13 @@ def get_suggestion(
         {"ticker": i["ticker"], "name": i["name"], "type": i["type"]}
         for i in resolved
     ]
+    decision["cycle_id"] = str(uuid.uuid4())
     decision["timestamp"] = timeutil.now_iso()
+    decision["env"] = config.T212_ENV
     return decision
 
 
 def log_decision(decision: dict, path: str | None = None) -> None:
-    log_path = Path(path) if path else config.DATA_DIR / "decisions.jsonl"
+    log_path = Path(path) if path else config.env_data_dir() / "decisions.jsonl"
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(decision) + "\n")
