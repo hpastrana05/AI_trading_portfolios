@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -11,6 +12,7 @@ import autopilot
 import config
 import journal
 import memory
+import performance
 import t212
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -58,6 +60,7 @@ def index(request: Request):
 
     try:
         account = _get_account_cached()
+        performance.record_snapshot(account)
         positions = _get_positions_cached()
         alloc = autopilot.current_allocation(account, positions)
     except Exception as exc:
@@ -123,6 +126,26 @@ def memory_page(request: Request):
         "memory.html",
         {"active": "memory", "memory": memory.load(), "env": config.T212_ENV},
     )
+
+
+@app.get("/performance", response_class=HTMLResponse)
+def performance_page(request: Request):
+    try:
+        account = _get_account_cached()
+        performance.record_snapshot(account)
+    except Exception:
+        pass
+    return templates.TemplateResponse(
+        request,
+        "performance.html",
+        {"active": "performance", "env": config.T212_ENV},
+    )
+
+
+@app.get("/api/performance")
+def performance_api(range: str = "max"):
+    data = performance.build_performance(range)
+    return JSONResponse(data)
 
 
 if __name__ == "__main__":

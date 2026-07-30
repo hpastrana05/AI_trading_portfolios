@@ -21,13 +21,19 @@ def get_positions() -> list[dict]:
     for pos in data:
         qty = float(pos["quantity"])
         price = float(pos.get("currentPrice", 0))
+        impact = pos.get("walletImpact") or {}
+        pnl = float(impact.get("unrealizedProfitLoss", 0))
+        total_cost = float(impact.get("totalCost", 0))
+        value = float(impact.get("currentValue", qty * price))
+        pnl_pct = (pnl / total_cost * 100) if total_cost else 0.0
         result.append(
             {
                 "ticker": pos["instrument"]["ticker"],
                 "quantity": qty,
                 "current_price": price,
-                "value": qty * price,
-                "pnl": float(pos["walletImpact"]["unrealizedProfitLoss"]),
+                "value": value,
+                "pnl": pnl,
+                "pnl_pct": pnl_pct,
             }
         )
     return result

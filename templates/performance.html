@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Performance — AI Trading Autopilot{% endblock %}
+
+{% block content %}
+  <header class="page-header">
+    <h1>Portfolio Performance</h1>
+    <div class="header-meta">
+      <span class="badge {% if env == 'LIVE' %}live{% else %}demo{% endif %}">{{ env }}</span>
+      <span class="badge">Equity curve</span>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="range-toolbar" id="range-toolbar">
+      <button class="btn-secondary range-btn active" data-range="1d" type="button">1D</button>
+      <button class="btn-secondary range-btn" data-range="1w" type="button">1W</button>
+      <button class="btn-secondary range-btn" data-range="1m" type="button">1M</button>
+      <button class="btn-secondary range-btn" data-range="3m" type="button">3M</button>
+      <button class="btn-secondary range-btn" data-range="1y" type="button">1Y</button>
+      <button class="btn-secondary range-btn" data-range="max" type="button">MAX</button>
+    </div>
+
+    <div class="stats perf-stats">
+      <div class="stat">
+        <div class="stat-label">Total P&amp;L</div>
+        <div class="stat-value" id="metric-pnl">-</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Total P&amp;L (%)</div>
+        <div class="stat-value" id="metric-pnl-pct">-</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Max Drawdown</div>
+        <div class="stat-value" id="metric-dd">-</div>
+      </div>
+    </div>
+
+    <div class="chart-wrap">
+      <canvas id="performance-chart" height="110"></canvas>
+    </div>
+    <div class="meta" id="performance-empty" style="display:none;">Not enough data yet. Run the autopilot or open dashboard to collect snapshots.</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}

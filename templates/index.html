@@ -96,6 +96,7 @@
             <th>Price</th>
             <th>Value</th>
             <th>P&amp;L</th>
+            <th>P&amp;L (%)</th>
             <th>Weight</th>
           </tr>
         </thead>
@@ -107,12 +108,13 @@
             <td>{{ "%.2f"|format(pos.current_price) }}</td>
             <td>{{ "%.2f"|format(pos.value) }}</td>
             <td class="{% if pos.pnl >= 0 %}pnl-pos{% else %}pnl-neg{% endif %}">{{ "%.2f"|format(pos.pnl) }}</td>
+            <td class="{% if pos.pnl >= 0 %}pnl-pos{% else %}pnl-neg{% endif %}">{{ "%+.1f"|format(pos.pnl_pct) }}%</td>
             <td>{{ "%.1f"|format(allocation.get(pos.ticker, 0) * 100) }}%</td>
           </tr>
           {% endfor %}
           <tr>
             <td><span class="ticker">CASH</span></td>
-            <td colspan="4"></td>
+            <td colspan="5"></td>
             <td><strong>{{ "%.1f"|format(allocation.get("CASH", 0) * 100) }}%</strong></td>
           </tr>
         </tbody>

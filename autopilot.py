@@ -7,6 +7,7 @@ import ai
 import config
 import journal
 import memory
+import performance
 import t212
 
 STATE_PATH = config.DATA_DIR / "autopilot_state.json"
@@ -236,6 +237,12 @@ def run_cycle(risk: str) -> dict:
             decision.get("memory_update", {}),
             thinking=decision.get("thinking", ""),
         )
+
+    # Persist an equity snapshot for performance charts.
+    try:
+        performance.record_snapshot(t212.get_account())
+    except Exception:
+        pass
 
     summary_notes = prep_notes
     if skipped:

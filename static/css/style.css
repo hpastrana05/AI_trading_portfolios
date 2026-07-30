@@ -407,6 +407,31 @@ button:disabled {
   font-weight: 500;
 }
 
+.range-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.range-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.perf-stats {
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.chart-wrap {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem;
+}
+
 /* Alerts */
 .alert {
   padding: 0.85rem 1rem;
