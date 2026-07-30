@@ -83,7 +83,9 @@ document.addEventListener("DOMContentLoaded", () => {
     setMetric(metricPnlPct, data.metrics.total_pnl_pct || 0, "%", 2);
     setMetric(metricDd, -(data.metrics.max_dd_pct || 0), "%", 2);
 
-    const labels = points.map((p) => new Date(p.timestamp).toLocaleString());
+    const labels = points.map((p) =>
+      new Date(p.timestamp).toLocaleString("es-ES", { timeZone: "Europe/Madrid" })
+    );
     const pnl = points.map((p) => p.pnl);
     const pnlPct = points.map((p) => p.pnl_pct);
 

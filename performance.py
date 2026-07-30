@@ -1,7 +1,9 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import config
+import timeutil
 
 SNAPSHOTS_PATH = config.DATA_DIR / "portfolio_snapshots.jsonl"
 
@@ -12,12 +14,19 @@ def record_snapshot(account: dict) -> None:
         return
 
     payload = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": timeutil.now_iso(),
         "total_value": total_value,
         "currency": account.get("currency", ""),
     }
     with open(SNAPSHOTS_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(payload) + "\n")
+
+
+def _parse_ts(value: str) -> datetime:
+    dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    return dt.astimezone(timeutil.app_tz())
 
 
 def _read_snapshots() -> list[dict]:
@@ -90,10 +99,10 @@ def build_performance(range_key: str = "max") -> dict:
             "metrics": {"total_pnl": 0.0, "total_pnl_pct": 0.0, "max_dd": 0.0, "max_dd_pct": 0.0},
         }
 
-    now = datetime.now(timezone.utc)
+    now = timeutil.now()
     start = _start_for_range(range_key, now)
     if start is not None:
-        filtered = [r for r in snapshots if datetime.fromisoformat(r["timestamp"]) >= start]
+        filtered = [r for r in snapshots if _parse_ts(r["timestamp"]) >= start]
     else:
         filtered = snapshots
 

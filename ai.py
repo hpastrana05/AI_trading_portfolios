@@ -1,11 +1,11 @@
 import json
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 from google import genai
 
 import config
+import timeutil
 
 _client_instance: genai.Client | None = None
 _active_model: str | None = None
@@ -190,7 +190,7 @@ def get_suggestion(
         {"ticker": i["ticker"], "name": i["name"], "type": i["type"]}
         for i in resolved
     ]
-    decision["timestamp"] = datetime.now(timezone.utc).isoformat()
+    decision["timestamp"] = timeutil.now_iso()
     return decision
 
 

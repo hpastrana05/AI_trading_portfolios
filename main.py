@@ -14,6 +14,7 @@ import journal
 import memory
 import performance
 import t212
+import timeutil
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AI Trading Autopilot", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+templates.env.filters["local_time"] = timeutil.format_local
 
 
 @app.get("/", response_class=HTMLResponse)

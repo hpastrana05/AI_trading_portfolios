@@ -1,8 +1,8 @@
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
 import config
+import timeutil
 
 MEMORY_PATH = config.DATA_DIR / "ai_memory.json"
 
@@ -29,7 +29,7 @@ def load() -> dict:
 
 
 def save(data: dict) -> None:
-    data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    data["updated_at"] = timeutil.now_iso()
     MEMORY_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
@@ -48,7 +48,7 @@ def apply_update(update: dict, thinking: str = "") -> dict:
         log = data.get("thinking_log") or []
         log.append(
             {
-                "at": datetime.now(timezone.utc).isoformat(),
+                "at": timeutil.now_iso(),
                 "text": thinking,
             }
         )

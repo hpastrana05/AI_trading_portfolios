@@ -31,7 +31,7 @@
         <tbody>
           {% for t in trades %}
           <tr>
-            <td class="time-cell">{{ t.timestamp[:19] | replace('T', ' ') }}</td>
+            <td class="time-cell">{{ t.timestamp | local_time }}</td>
             <td><span class="tag {{ t.type }}">{{ t.type }}</span></td>
             <td><span class="ticker">{{ t.ticker }}</span></td>
             <td class="{{ t.action }}">{{ t.action | upper }}</td>

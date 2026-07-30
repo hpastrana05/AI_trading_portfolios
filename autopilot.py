@@ -1,7 +1,6 @@
 import json
 import threading
 import time
-from datetime import datetime, timezone
 
 import ai
 import config
@@ -9,6 +8,7 @@ import journal
 import memory
 import performance
 import t212
+import timeutil
 
 STATE_PATH = config.DATA_DIR / "autopilot_state.json"
 _lock = threading.Lock()
@@ -254,7 +254,7 @@ def run_cycle(risk: str) -> dict:
         "skipped": skipped,
         "trades_planned": trades,
         "notes": summary_notes,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": timeutil.now_iso(),
     }
 
 
@@ -283,13 +283,13 @@ def _loop() -> None:
         except Exception as exc:
             state = load_state()
             state["last_error"] = str(exc)
-            state["last_run"] = datetime.now(timezone.utc).isoformat()
+            state["last_run"] = timeutil.now_iso()
             save_state(state)
 
 
 def _save_run_result(result: dict | None, exc: Exception | None = None) -> None:
     state = load_state()
-    state["last_run"] = datetime.now(timezone.utc).isoformat()
+    state["last_run"] = timeutil.now_iso()
     if exc:
         state["last_error"] = str(exc)
         save_state(state)

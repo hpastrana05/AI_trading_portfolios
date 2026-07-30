@@ -53,3 +53,4 @@ INSTRUMENTS_CACHE_HOURS = int(os.getenv("INSTRUMENTS_CACHE_HOURS", "24"))
 
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8100"))
+APP_TZ = os.getenv("APP_TZ", "Europe/Madrid")

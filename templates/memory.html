@@ -8,7 +8,7 @@
     <div class="header-meta">
       <span class="badge {% if env == 'LIVE' %}live{% else %}demo{% endif %}">{{ env }}</span>
       {% if memory.updated_at %}
-      <span class="badge">Updated {{ memory.updated_at[:19] | replace('T', ' ') }}</span>
+      <span class="badge">Updated {{ memory.updated_at | local_time }}</span>
       {% endif %}
     </div>
   </header>
@@ -49,7 +49,7 @@
       {% if memory.thinking_log %}
       {% for entry in memory.thinking_log | reverse %}
       <div class="thinking-entry">
-        <div class="time-cell">{{ entry.at[:19] | replace('T', ' ') }} UTC</div>
+        <div class="time-cell">{{ entry.at | local_time }}</div>
         <pre>{{ entry.text }}</pre>
       </div>
       {% endfor %}

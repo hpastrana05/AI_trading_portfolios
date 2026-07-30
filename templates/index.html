@@ -56,7 +56,7 @@
     {% if state.last_run or state.last_summary or state.last_error %}
     <div class="status-info">
       {% if state.last_run %}
-      <div class="status-line">Last run: <strong>{{ state.last_run }}</strong></div>
+      <div class="status-line">Last run: <strong>{{ state.last_run | local_time }}</strong></div>
       {% endif %}
       {% if state.last_summary %}
       <div class="status-line">Result: <strong>{{ state.last_summary }}</strong></div>
