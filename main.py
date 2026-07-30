@@ -42,7 +42,9 @@ def _get_positions_cached() -> list[dict]:
 async def lifespan(app: FastAPI):
     state = autopilot.load_state()
     if state.get("running"):
-        autopilot.start(state.get("risk", "medium"))
+        # Resume on Docker restart: catch up once only if a slot was missed,
+        # then wait for the next aligned clock time.
+        autopilot.start(state.get("risk", "medium"), force_run=False)
     yield
 
 
@@ -87,7 +89,7 @@ def index(request: Request):
 
 @app.post("/start")
 def start_autopilot(risk: str = Form("medium")):
-    autopilot.start(risk)
+    autopilot.start(risk, force_run=True)
     return RedirectResponse(url="/", status_code=303)
 
 

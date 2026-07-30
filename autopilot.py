@@ -258,16 +258,27 @@ def run_cycle(risk: str) -> dict:
     }
 
 
+def _wait_until_next_slot() -> bool:
+    """Sleep until the next aligned clock slot. Returns False if stopped."""
+    while True:
+        if not load_state().get("running"):
+            return False
+        target = timeutil.next_aligned()
+        remaining = (target - timeutil.now()).total_seconds()
+        if remaining <= 0:
+            return True
+        # Wake often so Stop reacts quickly.
+        time.sleep(min(1.0, remaining))
+
+
 def _loop() -> None:
     while True:
-        for _ in range(config.AUTOPILOT_INTERVAL_MINUTES * 60):
-            if not load_state().get("running"):
-                return
-            time.sleep(1)
+        if not _wait_until_next_slot():
+            return
 
         state = load_state()
         if not state.get("running"):
-            break
+            return
         risk = state.get("risk", "medium")
         try:
             result = run_cycle(risk)
@@ -307,7 +318,14 @@ def _save_run_result(result: dict | None, exc: Exception | None = None) -> None:
     save_state(state)
 
 
-def start(risk: str | None = None) -> dict:
+def start(risk: str | None = None, force_run: bool = True) -> dict:
+    """
+    Start the autopilot loop.
+
+    force_run=True  → always run once now (Start button).
+    force_run=False → only catch up if a scheduled slot was missed (Docker restart).
+    Then wait for the next aligned clock hour/slot.
+    """
     global _thread
     with _lock:
         state = load_state()
@@ -318,11 +336,14 @@ def start(risk: str | None = None) -> dict:
         if _thread is None or not _thread.is_alive():
             _thread = threading.Thread(target=_loop, daemon=True)
             _thread.start()
-    try:
-        result = run_cycle(state["risk"])
-        _save_run_result(result)
-    except Exception as exc:
-        _save_run_result(None, exc)
+
+    should_run = force_run or timeutil.missed_schedule(state.get("last_run"))
+    if should_run:
+        try:
+            result = run_cycle(state["risk"])
+            _save_run_result(result)
+        except Exception as exc:
+            _save_run_result(None, exc)
     return load_state()
 
 
