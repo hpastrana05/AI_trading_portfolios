@@ -60,6 +60,68 @@ def risk_prompt(risk: str) -> str:
     return RISK_PROMPTS.get(risk.lower(), RISK_PROMPTS["medium"])
 
 
+def cycle_pnl_context(account: dict) -> dict:
+    """P&L since the previous AI cycle (portfolio value then → now)."""
+    state = load_state()
+    now_value = float(account.get("total_value") or 0)
+    currency = account.get("currency", "")
+    prev_value = state.get("last_cycle_value")
+    prev_at = state.get("last_cycle_at") or state.get("last_run")
+
+    if prev_value is None or float(prev_value) <= 0 or now_value <= 0:
+        return {
+            "pnl": None,
+            "pnl_pct": None,
+            "prev_value": None,
+            "prev_at": prev_at,
+            "now_value": now_value,
+            "text": (
+                f"No prior cycle baseline yet. Current portfolio value: "
+                f"{now_value:.2f} {currency}. "
+                "Actively choose the best allocation for the strategy. "
+                "Goal: maximize quality of the portfolio while avoiding cycle-to-cycle losses."
+            ),
+        }
+
+    prev_value = float(prev_value)
+    pnl = now_value - prev_value
+    pnl_pct = pnl / prev_value * 100
+    when = timeutil.format_local(prev_at) if prev_at else "previous cycle"
+    if pnl_pct >= 0:
+        guidance = (
+            "Period P&L is positive — do NOT default to hold. "
+            "Evaluate the best next allocation given this edge: improve the portfolio if a better setup exists, "
+            "or keep current weights only if that is truly the best option after comparing alternatives. "
+            "Avoid changes that are likely to erase the gain and turn this period P&L negative."
+        )
+    else:
+        guidance = (
+            "Period P&L is negative — seek the best recovery path with controlled risk. "
+            "Prefer reallocations that improve expected outcome; avoid revenge trading and avoid deepening losses. "
+            "Hold only if staying put is clearly better than available alternatives."
+        )
+    return {
+        "pnl": pnl,
+        "pnl_pct": pnl_pct,
+        "prev_value": prev_value,
+        "prev_at": prev_at,
+        "now_value": now_value,
+        "text": (
+            f"Since last cycle ({when}): portfolio P&L {pnl:+.2f} {currency} "
+            f"({pnl_pct:+.2f}%). "
+            f"Was {prev_value:.2f} → now {now_value:.2f} {currency}. "
+            f"{guidance}"
+        ),
+    }
+
+
+def store_cycle_baseline(account: dict) -> None:
+    state = load_state()
+    state["last_cycle_value"] = float(account.get("total_value") or 0)
+    state["last_cycle_at"] = timeutil.now_iso()
+    save_state(state)
+
+
 def current_allocation(account: dict, positions: list[dict]) -> dict[str, float]:
     total = account["total_value"]
     if total <= 0:
@@ -183,20 +245,33 @@ def run_cycle(risk: str) -> dict:
     available = t212.available_ticker_set(all_instruments)
     mem = memory.load()
     rules = guardrails.load()
+    pnl_ctx = cycle_pnl_context(account)
     strategy = (
         f"{config.STRATEGY}\n{risk_prompt(risk)}\n"
         f"{guardrails.prompt_text(rules)}\n"
+        f"{pnl_ctx['text']}\n"
         f"Available cash: {account['cash_available']:.2f} {account['currency']}. "
         "Do not allocate more than available cash. "
-        "If the portfolio is already fine, prefer no_changes=true instead of forcing trades."
+        "Choose the best option for the portfolio; use no_changes=true only when holding is clearly best after comparing alternatives — never as a default just because P&L is green."
     )
 
     def resolve(symbols: list[str]) -> list[dict]:
         return t212.resolve_symbols(symbols, all_instruments)
 
     decision = ai.get_suggestion(strategy, resolve, alloc, mem, risk)
+    decision["since_last_cycle"] = {
+        "pnl": pnl_ctx["pnl"],
+        "pnl_pct": pnl_ctx["pnl_pct"],
+        "prev_value": pnl_ctx["prev_value"],
+        "now_value": pnl_ctx["now_value"],
+        "prev_at": pnl_ctx["prev_at"],
+    }
     ai.log_decision(decision)
-    print(f"[autopilot] AI cycle done at {timeutil.now_iso()} risk={risk}", flush=True)
+    print(
+        f"[autopilot] AI cycle done at {timeutil.now_iso()} risk={risk} "
+        f"since_last_cycle_pnl_pct={pnl_ctx['pnl_pct']}",
+        flush=True,
+    )
 
     hold = bool(decision.get("no_changes"))
     target = decision.get("allocation", {})
@@ -297,7 +372,15 @@ def run_cycle(risk: str) -> dict:
     except Exception:
         pass
 
+    # Baseline for next cycle's "since last talk" P&L %.
+    try:
+        store_cycle_baseline(t212.get_account())
+    except Exception:
+        store_cycle_baseline(account)
+
     summary_notes = prep_notes + guard_notes
+    if pnl_ctx.get("pnl_pct") is not None:
+        summary_notes = [f"Since last cycle: {pnl_ctx['pnl_pct']:+.2f}%"] + summary_notes
     if skipped:
         summary_notes = summary_notes + [f"Skipped {len(skipped)} trade(s)"]
     if hold and not executed:

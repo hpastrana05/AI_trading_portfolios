@@ -169,7 +169,12 @@ Only use these exact Trading212 tickers plus CASH:
 Allowed: {", ".join(allowed)} and CASH.
 Weights must sum to 1.0.
 Include estimated_prices for tickers not currently held.
-IMPORTANT: If no rebalance is needed, set "no_changes": true, keep allocation close to current, and explain why you are holding. Do not force trades.{allocation_hint}{mem}
+IMPORTANT about period P&L: use "Since last cycle" P&L % as context for the decision.
+Your job is to pick the best allocation given that P&L — improve when better options exist.
+Avoid decisions likely to turn a positive period P&L negative, or to deepen a negative period P&L.
+Do NOT choose hold/no_changes merely because period P&L is positive.
+Set "no_changes": true ONLY if, after comparing alternatives, holding is truly the best option.
+Explain that comparison in thinking/reasoning.{allocation_hint}{mem}
 
 Research:
 {research}
