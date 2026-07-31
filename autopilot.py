@@ -316,11 +316,16 @@ def run_cycle(risk: str) -> dict:
 
 
 def _wait_until_next_slot() -> bool:
-    """Sleep until the next weekday-aligned clock slot. Returns False if stopped."""
+    """Sleep until the next weekday-aligned clock slot. Returns False if stopped.
+
+    Important: lock the target once. Recalculating next_aligned() each second
+    can skip the slot (at 11:00:00.1, 'next' becomes 12:00).
+    """
+    target = timeutil.next_trading_aligned()
+    print(f"[autopilot] waiting until {target.isoformat()}", flush=True)
     while True:
         if not load_state().get("running"):
             return False
-        target = timeutil.next_trading_aligned()
         remaining = (target - timeutil.now()).total_seconds()
         if remaining <= 0:
             return True
@@ -329,8 +334,6 @@ def _wait_until_next_slot() -> bool:
 
 def _loop() -> None:
     while True:
-        target = timeutil.next_trading_aligned()
-        print(f"[autopilot] waiting until {target.isoformat()}", flush=True)
         if not _wait_until_next_slot():
             print("[autopilot] stopped", flush=True)
             return
