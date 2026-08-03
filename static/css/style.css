@@ -640,6 +640,17 @@ button:disabled {
   text-decoration: underline;
 }
 
+.demo-reset-box {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 @media (max-width: 640px) {
   .guidance-header {
     flex-direction: column;

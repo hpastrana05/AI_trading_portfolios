@@ -88,6 +88,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const metricPnl = document.getElementById("metric-pnl");
   const metricPnlPct = document.getElementById("metric-pnl-pct");
   const metricDd = document.getElementById("metric-dd");
+  const metricInvested = document.getElementById("metric-invested");
+  const capitalHint = document.getElementById("capital-hint");
   const ctx = canvas.getContext("2d");
   const hasChartLib = typeof Chart !== "undefined" && !!ctx;
 
@@ -109,8 +111,27 @@ document.addEventListener("DOMContentLoaded", () => {
     el.classList.add(pickClass(value));
   }
 
+  function setCapital(data) {
+    const capital = data.capital || {};
+    const currency = data.currency || "EUR";
+    const invested = Number(capital.net_invested || 0);
+    const deposits = Number(capital.net_deposits || 0);
+    const baseline = capital.baseline;
+    if (metricInvested) {
+      metricInvested.textContent = `${invested.toFixed(2)} ${currency}`;
+      metricInvested.classList.remove("pnl-pos", "pnl-neg");
+    }
+    if (capitalHint) {
+      const parts = [];
+      if (baseline != null) parts.push(`Baseline ${Number(baseline).toFixed(2)} ${currency}`);
+      if (deposits > 0) parts.push(`deposits +${deposits.toFixed(2)} ${currency} (excluded from P&L)`);
+      capitalHint.textContent = parts.join(" · ");
+    }
+  }
+
   function draw(data) {
     const points = data.points || [];
+    setCapital(data);
     if (points.length < 2) {
       if (chart) chart.destroy();
       canvas.style.display = "none";

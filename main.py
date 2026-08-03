@@ -154,7 +154,7 @@ def memory_page(request: Request):
 
 
 @app.get("/performance", response_class=HTMLResponse)
-def performance_page(request: Request):
+def performance_page(request: Request, reset: int = 0, deposit_saved: int = 0):
     try:
         account = _get_account_cached()
         performance.record_snapshot(account)
@@ -163,7 +163,15 @@ def performance_page(request: Request):
     return templates.TemplateResponse(
         request,
         "performance.html",
-        {"active": "performance", "env": config.T212_ENV},
+        {
+            "active": "performance",
+            "env": config.T212_ENV,
+            "can_reset": config.T212_ENV == "DEMO",
+            "can_deposit": config.T212_ENV == "LIVE",
+            "demo_baseline": config.DEMO_BASELINE,
+            "reset_done": bool(reset),
+            "deposit_saved": bool(deposit_saved),
+        },
     )
 
 
@@ -171,6 +179,32 @@ def performance_page(request: Request):
 def performance_api(range: str = "max"):
     data = performance.build_performance(range)
     return JSONResponse(data)
+
+
+@app.post("/performance/reset")
+def performance_reset():
+    if config.T212_ENV != "DEMO":
+        return RedirectResponse(url="/performance", status_code=303)
+    try:
+        autopilot.stop()
+    except Exception:
+        pass
+    performance.reset_demo_local_data()
+    # Force portfolio cache refresh after wipe.
+    _ACCOUNT_CACHE["data"] = None
+    _POSITIONS_CACHE["data"] = None
+    return RedirectResponse(url="/performance?reset=1", status_code=303)
+
+
+@app.post("/performance/deposit")
+def performance_deposit(amount: str = Form("")):
+    if config.T212_ENV != "LIVE":
+        return RedirectResponse(url="/performance", status_code=303)
+    try:
+        performance.add_deposit(float(amount), reason="manual")
+    except Exception:
+        return RedirectResponse(url="/performance", status_code=303)
+    return RedirectResponse(url="/performance?deposit_saved=1", status_code=303)
 
 
 @app.get("/settings", response_class=HTMLResponse)

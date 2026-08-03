@@ -1,47 +1,141 @@
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import config
 import timeutil
 
-_SNAPSHOT_MARKER = ".snapshots_investable"
 
-
-def _snapshots_path():
+def _snapshots_path() -> Path:
     return config.env_data_dir() / "portfolio_snapshots.jsonl"
 
 
-def _archive_marker_path():
-    return config.env_data_dir() / _SNAPSHOT_MARKER
+def _capital_path() -> Path:
+    return config.env_data_dir() / "performance_capital.json"
 
 
-def _maybe_archive_full_account_snapshots() -> None:
-    """One-time: move pie-inclusive history aside before investable series starts."""
-    path = _snapshots_path()
-    marker = _archive_marker_path()
-    if marker.exists():
-        return
-    if path.exists() and path.stat().st_size > 0:
-        archive = config.env_data_dir() / "portfolio_snapshots_full_account.jsonl"
-        if not archive.exists():
-            path.rename(archive)
-        elif path.exists():
-            # Marker missing but archive already present — drop stale mixed file.
-            path.unlink(missing_ok=True)
-    marker.write_text("investable\n", encoding="utf-8")
+def _default_baseline() -> float:
+    if config.T212_ENV == "DEMO":
+        return float(config.DEMO_BASELINE)
+    return 0.0
+
+
+def load_capital() -> dict:
+    path = _capital_path()
+    data = {
+        "baseline": _default_baseline() if config.T212_ENV == "DEMO" else None,
+        "net_deposits": 0.0,
+        "deposits": [],
+        "updated_at": None,
+    }
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if raw.get("baseline") is not None:
+                data["baseline"] = float(raw["baseline"])
+            data["net_deposits"] = float(raw.get("net_deposits") or 0)
+            data["deposits"] = list(raw.get("deposits") or [])
+            data["updated_at"] = raw.get("updated_at")
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            pass
+    if data["baseline"] is None and config.T212_ENV == "DEMO":
+        data["baseline"] = _default_baseline()
+    return data
+
+
+def save_capital(data: dict) -> dict:
+    payload = {
+        "baseline": data.get("baseline"),
+        "net_deposits": float(data.get("net_deposits") or 0),
+        "deposits": list(data.get("deposits") or []),
+        "updated_at": timeutil.now_iso(),
+    }
+    _capital_path().write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return payload
+
+
+def ensure_capital(account: dict | None = None) -> dict:
+    """Ensure DEMO has 5000 baseline; LIVE sets baseline from first snapshot value."""
+    capital = load_capital()
+    changed = False
+    if capital.get("baseline") is None:
+        if config.T212_ENV == "DEMO":
+            capital["baseline"] = _default_baseline()
+            changed = True
+        elif account and float(account.get("total_value") or 0) > 0:
+            capital["baseline"] = float(account["total_value"])
+            changed = True
+    if changed:
+        save_capital(capital)
+    return capital
+
+
+def add_deposit(amount: float, reason: str = "manual") -> dict:
+    amount = float(amount)
+    if amount <= 0:
+        raise ValueError("Deposit amount must be > 0")
+    capital = load_capital()
+    if capital.get("baseline") is None:
+        raise ValueError("Set a performance baseline before registering deposits")
+    capital["net_deposits"] = float(capital.get("net_deposits") or 0) + amount
+    deposits = list(capital.get("deposits") or [])
+    deposits.append(
+        {
+            "timestamp": timeutil.now_iso(),
+            "amount": amount,
+            "reason": reason,
+        }
+    )
+    capital["deposits"] = deposits
+    return save_capital(capital)
+
+
+def _net_invested_at(capital: dict, when: datetime) -> float:
+    baseline = float(capital.get("baseline") or 0)
+    total = baseline
+    for dep in capital.get("deposits") or []:
+        try:
+            ts = _parse_ts(dep["timestamp"])
+            if ts <= when:
+                total += float(dep.get("amount") or 0)
+        except (KeyError, TypeError, ValueError):
+            continue
+    return total
+
+
+def _last_snapshot() -> dict | None:
+    rows = _read_snapshots()
+    return rows[-1] if rows else None
 
 
 def record_snapshot(account: dict) -> None:
-    _maybe_archive_full_account_snapshots()
-
     total_value = float(account.get("total_value", 0))
     if total_value <= 0:
         return
 
+    capital = ensure_capital(account)
+    previous = _last_snapshot()
+
+    # Avoid duplicate spam: skip if last point is within 30s and value unchanged.
+    if previous:
+        try:
+            age = (timeutil.now() - _parse_ts(previous["timestamp"])).total_seconds()
+            same_value = abs(float(previous["total_value"]) - total_value) < 0.01
+            if age < 30 and same_value:
+                return
+        except (TypeError, ValueError):
+            pass
+
+    # LIVE with no baseline yet after first point
+    if capital.get("baseline") is None:
+        capital["baseline"] = total_value
+        save_capital(capital)
+
     payload = {
         "timestamp": timeutil.now_iso(),
         "total_value": total_value,
+        "cash_available": float(account.get("cash_available") or 0),
         "account_total": float(account.get("account_total") or 0),
         "currency": account.get("currency", ""),
         "env": config.T212_ENV,
@@ -59,7 +153,6 @@ def _parse_ts(value: str) -> datetime:
 
 
 def _read_snapshots() -> list[dict]:
-    _maybe_archive_full_account_snapshots()
     path = _snapshots_path()
     if not path.exists():
         return []
@@ -76,6 +169,7 @@ def _read_snapshots() -> list[dict]:
                 if row["total_value"] <= 0:
                     continue
                 row["timestamp"] = str(row.get("timestamp", ""))
+                row["cash_available"] = float(row.get("cash_available") or 0)
                 rows.append(row)
             except (ValueError, json.JSONDecodeError, TypeError):
                 continue
@@ -121,50 +215,111 @@ def _max_drawdown(values: list[float]) -> tuple[float, float]:
 
 
 def build_performance(range_key: str = "max") -> dict:
+    capital = ensure_capital()
     snapshots = _read_snapshots()
-    if not snapshots:
+    currency = ""
+    if snapshots:
+        currency = snapshots[-1].get("currency", "")
+
+    # DEMO: synthetic start at baseline so chart has a fixed 5000€ origin.
+    points_src = list(snapshots)
+    if config.T212_ENV == "DEMO" and capital.get("baseline"):
+        baseline = float(capital["baseline"])
+        if not points_src or abs(float(points_src[0]["total_value"]) - baseline) > 0.01:
+            first_ts = (
+                points_src[0]["timestamp"]
+                if points_src
+                else timeutil.now_iso()
+            )
+            # Place baseline just before first real point (or now).
+            try:
+                first_dt = _parse_ts(first_ts) - timedelta(seconds=1)
+                seed_ts = first_dt.isoformat()
+            except (TypeError, ValueError):
+                seed_ts = first_ts
+            points_src = [
+                {
+                    "timestamp": seed_ts,
+                    "total_value": baseline,
+                    "cash_available": baseline,
+                    "currency": currency or "EUR",
+                }
+            ] + points_src
+
+    if not points_src:
         return {
             "range": range_key.lower(),
-            "currency": "",
+            "currency": currency,
             "points": [],
-            "metrics": {"total_pnl": 0.0, "total_pnl_pct": 0.0, "max_dd": 0.0, "max_dd_pct": 0.0},
+            "capital": {
+                "baseline": capital.get("baseline"),
+                "net_deposits": float(capital.get("net_deposits") or 0),
+                "net_invested": float(capital.get("baseline") or 0)
+                + float(capital.get("net_deposits") or 0),
+            },
+            "metrics": {
+                "total_pnl": 0.0,
+                "total_pnl_pct": 0.0,
+                "max_dd": 0.0,
+                "max_dd_pct": 0.0,
+            },
         }
 
     now = timeutil.now()
     start = _start_for_range(range_key, now)
     if start is not None:
-        filtered = [r for r in snapshots if _parse_ts(r["timestamp"]) >= start]
+        filtered = [r for r in points_src if _parse_ts(r["timestamp"]) >= start]
+        # Keep one point before the window so range P&L is meaningful.
+        earlier = [r for r in points_src if _parse_ts(r["timestamp"]) < start]
+        if earlier and (not filtered or earlier[-1]["timestamp"] != filtered[0]["timestamp"]):
+            filtered = [earlier[-1]] + filtered
     else:
-        filtered = snapshots
+        filtered = points_src
 
     if not filtered:
-        filtered = [snapshots[-1]]
+        filtered = [points_src[-1]]
 
-    baseline = filtered[0]["total_value"]
     points = []
-    values: list[float] = []
+    invested_series: list[float] = []
     for row in filtered:
+        when = _parse_ts(row["timestamp"])
+        invested = _net_invested_at(capital, when)
+        if invested <= 0:
+            invested = float(row["total_value"])
         total = float(row["total_value"])
-        pnl = total - baseline
-        pnl_pct = (pnl / baseline * 100) if baseline > 0 else 0.0
-        values.append(total)
+        pnl = total - invested
+        pnl_pct = (pnl / invested * 100) if invested > 0 else 0.0
+        invested_series.append(invested + pnl)  # = total_value, for DD on equity
         points.append(
             {
                 "timestamp": row["timestamp"],
                 "total_value": total,
+                "net_invested": invested,
                 "pnl": pnl,
                 "pnl_pct": pnl_pct,
             }
         )
 
-    max_dd, max_dd_pct = _max_drawdown(values)
+    # Drawdown on deposit-adjusted equity (total_value), same as market equity.
+    max_dd, max_dd_pct = _max_drawdown([p["total_value"] for p in points])
+    # Prefer drawdown on P&L curve relative to net invested peak of (invested+pnl)=value
+    # Already using total_value which is correct for portfolio equity DD.
+
     total_pnl = points[-1]["pnl"] if points else 0.0
     total_pnl_pct = points[-1]["pnl_pct"] if points else 0.0
+    net_invested_now = points[-1]["net_invested"] if points else float(
+        capital.get("baseline") or 0
+    ) + float(capital.get("net_deposits") or 0)
 
     return {
         "range": range_key.lower(),
-        "currency": filtered[-1].get("currency", ""),
+        "currency": filtered[-1].get("currency", currency),
         "points": points,
+        "capital": {
+            "baseline": capital.get("baseline"),
+            "net_deposits": float(capital.get("net_deposits") or 0),
+            "net_invested": net_invested_now,
+        },
         "metrics": {
             "total_pnl": total_pnl,
             "total_pnl_pct": total_pnl_pct,
@@ -172,3 +327,46 @@ def build_performance(range_key: str = "max") -> dict:
             "max_dd_pct": max_dd_pct,
         },
     }
+
+
+def reset_demo_local_data() -> dict:
+    """Wipe DEMO-only local state after a Trading212 practice account reset."""
+    if config.T212_ENV != "DEMO":
+        raise RuntimeError("Reset is only available in DEMO")
+
+    try:
+        import autopilot
+
+        autopilot.stop()
+    except Exception:
+        pass
+
+    folder = config.env_data_dir("DEMO")
+    removed = []
+    names = [
+        "portfolio_snapshots.jsonl",
+        "portfolio_snapshots_full_account.jsonl",
+        "performance_capital.json",
+        ".snapshots_investable",
+        "trades.jsonl",
+        "ai_memory.json",
+        "decisions.jsonl",
+        "autopilot_state.json",
+        "user_guidance.json",
+        "instruments_cache.json",
+    ]
+    for name in names:
+        path = folder / name
+        if path.exists():
+            path.unlink()
+            removed.append(name)
+
+    # Restore fresh DEMO baseline.
+    save_capital(
+        {
+            "baseline": _default_baseline(),
+            "net_deposits": 0.0,
+            "deposits": [],
+        }
+    )
+    return {"removed": removed, "baseline": _default_baseline()}

@@ -116,3 +116,6 @@ OTHER_ENV_URL = os.getenv("OTHER_ENV_URL", "").rstrip("/")
 _other_port = os.getenv("OTHER_ENV_PORT", "").strip()
 OTHER_ENV_PORT = int(_other_port) if _other_port.isdigit() else None
 OTHER_ENV = "DEMO" if T212_ENV == "LIVE" else "LIVE"
+
+# Performance: DEMO P&L is measured from this starting capital.
+DEMO_BASELINE = float(os.getenv("DEMO_BASELINE", "5000"))
