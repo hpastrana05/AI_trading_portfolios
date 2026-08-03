@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/style.css?v=why4">
+  <link rel="stylesheet" href="/static/css/style.css?v=why7">
 </head>
 <body>
   <div class="app-shell">
@@ -33,6 +33,19 @@
           <a href="/settings" class="nav-item {% if active == 'settings' %}active{% endif %}">Guardrails</a>
           <a href="/usage" class="nav-item {% if active == 'usage' %}active{% endif %}">AI usage</a>
         </div>
+        {% if other_env_url or other_env_port %}
+        <div class="nav-group">
+          <div class="nav-group-label">Environment</div>
+          <a
+            href="{{ other_env_url or '#' }}"
+            class="nav-item env-switch env-switch-{{ other_env | lower }}"
+            id="env-switch-link"
+            {% if other_env_port and not other_env_url %}data-other-port="{{ other_env_port }}"{% endif %}
+          >
+            Open {{ other_env }}
+          </a>
+        </div>
+        {% endif %}
       </nav>
     </aside>
 
@@ -42,6 +55,6 @@
       </div>
     </main>
   </div>
-  <script src="/static/js/app.js?v=why4"></script>
+  <script src="/static/js/app.js?v=why8"></script>
 </body>
 </html>

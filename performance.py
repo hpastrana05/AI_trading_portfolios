@@ -5,12 +5,36 @@ from zoneinfo import ZoneInfo
 import config
 import timeutil
 
+_SNAPSHOT_MARKER = ".snapshots_investable"
+
 
 def _snapshots_path():
     return config.env_data_dir() / "portfolio_snapshots.jsonl"
 
 
+def _archive_marker_path():
+    return config.env_data_dir() / _SNAPSHOT_MARKER
+
+
+def _maybe_archive_full_account_snapshots() -> None:
+    """One-time: move pie-inclusive history aside before investable series starts."""
+    path = _snapshots_path()
+    marker = _archive_marker_path()
+    if marker.exists():
+        return
+    if path.exists() and path.stat().st_size > 0:
+        archive = config.env_data_dir() / "portfolio_snapshots_full_account.jsonl"
+        if not archive.exists():
+            path.rename(archive)
+        elif path.exists():
+            # Marker missing but archive already present — drop stale mixed file.
+            path.unlink(missing_ok=True)
+    marker.write_text("investable\n", encoding="utf-8")
+
+
 def record_snapshot(account: dict) -> None:
+    _maybe_archive_full_account_snapshots()
+
     total_value = float(account.get("total_value", 0))
     if total_value <= 0:
         return
@@ -18,8 +42,10 @@ def record_snapshot(account: dict) -> None:
     payload = {
         "timestamp": timeutil.now_iso(),
         "total_value": total_value,
+        "account_total": float(account.get("account_total") or 0),
         "currency": account.get("currency", ""),
         "env": config.T212_ENV,
+        "scope": "investable",
     }
     with open(_snapshots_path(), "a", encoding="utf-8") as f:
         f.write(json.dumps(payload) + "\n")
@@ -33,6 +59,7 @@ def _parse_ts(value: str) -> datetime:
 
 
 def _read_snapshots() -> list[dict]:
+    _maybe_archive_full_account_snapshots()
     path = _snapshots_path()
     if not path.exists():
         return []

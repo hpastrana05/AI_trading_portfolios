@@ -17,12 +17,26 @@
       {% if weekend %}
       <span class="badge stopped">Weekend pause</span>
       {% endif %}
+      {% if guidance.text %}
+      <span class="badge warning">Guidance pending</span>
+      {% endif %}
     </div>
   </header>
 
   {% if error %}
   <div class="alert alert-error">
     <strong>Could not load portfolio.</strong> {{ error }}
+  </div>
+  {% endif %}
+
+  {% if guidance.text %}
+  <div class="guidance-banner">
+    <div class="guidance-banner-top">
+      <span class="badge warning">Pending guidance</span>
+      <span class="meta">Applies on the next AI cycle, then clears</span>
+    </div>
+    <p class="guidance-banner-text">{{ guidance.text[:280] }}{% if guidance.text|length > 280 %}…{% endif %}</p>
+    <a href="/settings" class="guidance-banner-link">Edit guidance</a>
   </div>
   {% endif %}
 
@@ -77,8 +91,11 @@
   {% if account %}
   <div class="stats">
     <div class="stat">
-      <div class="stat-label">Portfolio value</div>
+      <div class="stat-label">Portfolio value <span class="stat-currency">(excl. pies)</span></div>
       <div class="stat-value">{{ "%.2f"|format(account.total_value) }} <span class="stat-currency">{{ account.currency }}</span></div>
+      {% if account.account_total and account.account_total > account.total_value %}
+      <div class="meta" style="margin-top:0.35rem">Full account {{ "%.2f"|format(account.account_total) }} {{ account.currency }}</div>
+      {% endif %}
     </div>
     <div class="stat">
       <div class="stat-label">Cash available</div>
@@ -90,8 +107,15 @@
     </div>
   </div>
 
+  {% if account.pies_excluded_value and account.pies_excluded_value > 0.5 %}
+  <div class="alert" style="background:var(--bg-elevated);border-color:var(--border);color:var(--text-muted)">
+    Pies are ignored by the autopilot and performance charts
+    (~{{ "%.2f"|format(account.pies_excluded_value) }} {{ account.currency }} excluded).
+  </div>
+  {% endif %}
+
   <div class="card">
-    <h2>Open positions</h2>
+    <h2>Open positions <span class="meta">(tradeable only)</span></h2>
     {% if positions %}
     <div class="table-wrap">
       <table>

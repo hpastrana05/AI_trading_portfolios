@@ -8,11 +8,20 @@
     <div class="header-meta">
       <span class="badge {% if env == 'LIVE' %}live{% else %}demo{% endif %}">{{ env }}</span>
       <span class="badge">Leave blank = AI decides</span>
+      {% if guidance.text %}
+      <span class="badge warning">Guidance pending</span>
+      {% endif %}
     </div>
   </header>
 
   {% if saved %}
   <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">Guardrails saved for {{ env }}.</div>
+  {% endif %}
+  {% if guidance_saved %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">Guidance saved for {{ env }}. It will apply on the next AI cycle, then clear.</div>
+  {% endif %}
+  {% if guidance_cleared %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">Guidance cleared for {{ env }}.</div>
   {% endif %}
   {% if error %}
   <div class="alert alert-error"><strong>Could not save.</strong> {{ error }}</div>
@@ -41,6 +50,41 @@
         </label>
       </div>
       <button type="submit" class="btn-primary" style="margin-top:1rem">Save guardrails</button>
+    </form>
+  </div>
+
+  <div class="card guidance-card{% if guidance.text %} has-pending{% endif %}" style="margin-top:1.25rem">
+    <div class="guidance-header">
+      <div>
+        <h2>Guidance for next cycle</h2>
+        <p class="meta">Soft hint for {{ env }}. Applies once on the next AI run, then clears. Edit or clear anytime before then. Hard guardrails still win if they conflict.</p>
+      </div>
+      {% if guidance.text %}
+      <span class="badge warning guidance-status">Pending</span>
+      {% else %}
+      <span class="badge guidance-status">Empty</span>
+      {% endif %}
+    </div>
+
+    <form method="post" action="/guidance" class="settings-form guidance-form">
+      <label class="guidance-label">
+        <span>Your note to the AI</span>
+        <textarea
+          name="text"
+          rows="5"
+          maxlength="2000"
+          placeholder="Example: Shift focus from AI leaders toward pharmaceuticals and healthcare ETFs."
+        >{{ guidance.text }}</textarea>
+      </label>
+      <div class="guidance-actions">
+        <button type="submit" class="btn-primary">Save guidance</button>
+        {% if guidance.text %}
+        <button type="submit" class="btn-secondary" formaction="/guidance/clear" formmethod="post">Clear</button>
+        {% endif %}
+        {% if guidance.updated_at %}
+        <span class="meta guidance-updated">Updated {{ guidance.updated_at | local_time }}</span>
+        {% endif %}
+      </div>
     </form>
   </div>
 {% endblock %}

@@ -7,29 +7,54 @@ from trading_api import accounts, instruments, orders, positions
 
 
 def get_account() -> dict:
+    """Account cash/totals. total_value is unset until portfolio_view()."""
     data = accounts.get_account_summary()
+    cash = data.get("cash") or {}
     return {
-        "total_value": float(data["totalValue"]),
         "currency": data.get("currency", ""),
-        "cash_available": float(data["cash"]["availableToTrade"]),
+        "cash_available": float(cash.get("availableToTrade") or 0),
+        "cash_in_pies": float(cash.get("inPies") or 0),
+        "account_total": float(data.get("totalValue") or 0),
+        # Filled by portfolio_view() as investable (excl. pies).
+        "total_value": 0.0,
+        "pies_excluded_value": 0.0,
     }
 
 
 def get_positions() -> list[dict]:
+    """Tradeable (non-pie) positions only. Fully pie-locked tickers are omitted."""
     data = positions.get_all_open_positions()
     result = []
     for pos in data:
-        qty = float(pos["quantity"])
-        price = float(pos.get("currentPrice", 0))
+        qty_total = float(pos.get("quantity") or 0)
+        if "quantityAvailableForTrading" in pos and pos["quantityAvailableForTrading"] is not None:
+            qty_tradeable = float(pos["quantityAvailableForTrading"])
+        else:
+            qty_tradeable = qty_total
+        qty_in_pies = float(pos.get("quantityInPies") or max(0.0, qty_total - qty_tradeable))
+
+        if qty_tradeable <= 1e-9:
+            continue
+
+        price = float(pos.get("currentPrice") or 0)
         impact = pos.get("walletImpact") or {}
-        pnl = float(impact.get("unrealizedProfitLoss", 0))
-        total_cost = float(impact.get("totalCost", 0))
-        value = float(impact.get("currentValue", qty * price))
-        pnl_pct = (pnl / total_cost * 100) if total_cost else 0.0
+        total_value = float(impact.get("currentValue", qty_total * price) or 0)
+        total_cost = float(impact.get("totalCost") or 0)
+        total_pnl = float(impact.get("unrealizedProfitLoss") or 0)
+
+        # Scale wallet impact to the tradeable fraction when part is in pies.
+        fraction = (qty_tradeable / qty_total) if qty_total > 0 else 1.0
+        value = total_value * fraction if total_value else qty_tradeable * price
+        cost = total_cost * fraction
+        pnl = total_pnl * fraction
+        pnl_pct = (pnl / cost * 100) if cost else 0.0
+
         result.append(
             {
                 "ticker": pos["instrument"]["ticker"],
-                "quantity": qty,
+                "quantity": qty_tradeable,
+                "quantity_total": qty_total,
+                "quantity_in_pies": qty_in_pies,
                 "current_price": price,
                 "value": value,
                 "pnl": pnl,
@@ -37,6 +62,26 @@ def get_positions() -> list[dict]:
             }
         )
     return result
+
+
+def portfolio_view(
+    account: dict | None = None,
+    positions_list: list[dict] | None = None,
+) -> tuple[dict, list[dict]]:
+    """Investable portfolio: free cash + tradeable positions (pies excluded)."""
+    account = dict(account if account is not None else get_account())
+    positions_list = list(positions_list if positions_list is not None else get_positions())
+
+    invested = sum(float(p.get("value") or 0) for p in positions_list)
+    cash = float(account.get("cash_available") or 0)
+    investable = cash + invested
+    account_total = float(account.get("account_total") or 0)
+    cash_in_pies = float(account.get("cash_in_pies") or 0)
+
+    account["total_value"] = investable
+    account["pies_excluded_value"] = max(0.0, account_total - investable)
+    account["cash_in_pies"] = cash_in_pies
+    return account, positions_list
 
 
 def place_market_order(ticker: str, quantity: float) -> dict:

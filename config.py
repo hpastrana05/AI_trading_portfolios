@@ -108,3 +108,11 @@ AI_USAGE_PATH = DATA_DIR / "ai_usage.jsonl"
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8100"))
 APP_TZ = os.getenv("APP_TZ", "Europe/Madrid")
+
+# Sibling Demo/Live jump link:
+# - OTHER_ENV_URL: absolute override (optional)
+# - OTHER_ENV_PORT: same host as the browser, different port (preferred for LAN/VPN)
+OTHER_ENV_URL = os.getenv("OTHER_ENV_URL", "").rstrip("/")
+_other_port = os.getenv("OTHER_ENV_PORT", "").strip()
+OTHER_ENV_PORT = int(_other_port) if _other_port.isdigit() else None
+OTHER_ENV = "DEMO" if T212_ENV == "LIVE" else "LIVE"

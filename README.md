@@ -14,20 +14,45 @@ cp .env.example .env
 mkdir -p data
 ```
 
-## Run
+## Run Demo and Live together
 
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8100
-```
+Demo and Live are separate processes (or containers) so you can test on practice while live stays up.
 
-Or with Docker:
+| Instance | Default URL | Data |
+|----------|-------------|------|
+| Demo | http://localhost:8100 | `data/demo/` |
+| Live | http://localhost:8101 | `data/live/` |
+
+### Docker (both)
 
 ```bash
 mkdir -p data
 docker compose up -d --build
 ```
 
+- Start only one: `docker compose up -d demo` or `docker compose up -d live`
+- Sidebar **Open DEMO/LIVE** keeps your current hostname and only changes the port (`8100` ↔ `8101`), so `pilab.local` at home and `pilab` over VPN both work without extra config
+
 The container entrypoint fixes `./data` permissions on startup (common issue on Pi when the folder is owned by root).
+
+### Local (both)
+
+```bash
+source venv/bin/activate
+./scripts/run-both.sh
+```
+
+### Single process
+
+```bash
+# Demo (default)
+T212_ENV=DEMO uvicorn main:app --host 0.0.0.0 --port 8100
+
+# Live
+T212_ENV=LIVE uvicorn main:app --host 0.0.0.0 --port 8101
+```
+
+Use the sidebar **Open DEMO** / **Open LIVE** link to jump between running instances.
 
 ## How it works
 
@@ -36,7 +61,7 @@ The container entrypoint fixes `./data` permissions on startup (common issue on 
 3. Click **Stop** to pause
 4. AI picks tickers, sizes positions, and executes trades automatically on Trading212
 5. Every trade is logged with entry/exit, reason, when, and where
-6. AI memory (`data/ai_memory.json`) stores thesis, plan, lessons, and thinking
+6. AI memory stores thesis, plan, lessons, and thinking (per environment)
 
 ## Pages
 
@@ -44,7 +69,9 @@ The container entrypoint fixes `./data` permissions on startup (common issue on 
 - **Trade history** — all executed trades
 - **AI memory** — how the AI is managing the portfolio
 
-## Data files (in `./data/`)
+## Data files
+
+State is isolated per environment under `./data/demo/` and `./data/live/`:
 
 | File | Purpose |
 |------|---------|
@@ -53,11 +80,6 @@ The container entrypoint fixes `./data` permissions on startup (common issue on 
 | `autopilot_state.json` | Running/stopped, risk level, last run |
 | `decisions.jsonl` | Full AI decision log per cycle |
 | `instruments_cache.json` | Trading212 instrument list cache |
+| `guardrails.json` | Hard limits for that environment |
 
-## Switch to live
-
-```
-T212_ENV=LIVE
-```
-
-Make sure live API keys are set in `.env`.
+Shared: `./data/ai_usage.jsonl` (Gemini usage, tagged with env).

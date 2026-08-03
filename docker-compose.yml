@@ -1,16 +1,36 @@
 services:
-  autopilot:
+  demo:
     build: .
-    container_name: ai-trading-autopilot
+    container_name: ai-trading-demo
     restart: unless-stopped
     env_file: .env
     ports:
-      - "${APP_PORT:-8100}:8100"
+      - "${DEMO_PORT:-8100}:8100"
     volumes:
       - ./data:/app/data
     environment:
+      T212_ENV: DEMO
       APP_HOST: 0.0.0.0
       APP_PORT: 8100
       DATA_DIR: /app/data
       TZ: Europe/Madrid
       APP_TZ: Europe/Madrid
+      OTHER_ENV_PORT: ${LIVE_PORT:-8101}
+
+  live:
+    build: .
+    container_name: ai-trading-live
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${LIVE_PORT:-8101}:8100"
+    volumes:
+      - ./data:/app/data
+    environment:
+      T212_ENV: LIVE
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8100
+      DATA_DIR: /app/data
+      TZ: Europe/Madrid
+      APP_TZ: Europe/Madrid
+      OTHER_ENV_PORT: ${DEMO_PORT:-8100}

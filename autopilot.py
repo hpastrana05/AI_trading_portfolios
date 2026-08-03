@@ -11,6 +11,7 @@ import performance
 import t212
 import timeutil
 import usage
+import user_guidance
 
 _lock = threading.Lock()
 _thread: threading.Thread | None = None
@@ -142,6 +143,7 @@ def compute_trades(
     total = account["total_value"]
     price_by_ticker = {p["ticker"]: p["current_price"] for p in positions}
     value_by_ticker = {p["ticker"]: p["value"] for p in positions}
+    qty_by_ticker = {p["ticker"]: float(p.get("quantity") or 0) for p in positions}
 
     for ticker, price in estimated_prices.items():
         if ticker not in price_by_ticker and price and float(price) > 0:
@@ -165,6 +167,14 @@ def compute_trades(
         quantity = round(diff_value / price, 4)
         if abs(quantity) < 0.0001:
             continue
+        # Never sell more than shares available outside pies.
+        if quantity < 0:
+            max_sell = qty_by_ticker.get(ticker, 0.0)
+            if max_sell <= 1e-9:
+                continue
+            if abs(quantity) > max_sell:
+                quantity = -round(max_sell, 4)
+                diff_value = quantity * price
         trades.append(
             {
                 "ticker": ticker,
@@ -238,8 +248,7 @@ def run_cycle(risk: str) -> dict:
             "timestamp": timeutil.now_iso(),
         }
 
-    account = t212.get_account()
-    positions = t212.get_positions()
+    account, positions = t212.portfolio_view()
     alloc = current_allocation(account, positions)
     all_instruments = t212.get_instruments()
     available = t212.available_ticker_set(all_instruments)
@@ -252,13 +261,20 @@ def run_cycle(risk: str) -> dict:
         f"{pnl_ctx['text']}\n"
         f"Available cash: {account['cash_available']:.2f} {account['currency']}. "
         "Do not allocate more than available cash. "
+        "Portfolio value and holdings exclude Trading212 pies — never manage or assume pie cash/shares. "
         "Choose the best option for the portfolio; use no_changes=true only when holding is clearly best after comparing alternatives — never as a default just because P&L is green."
     )
+    guidance = user_guidance.prompt_text()
+    if guidance:
+        strategy += "\n" + guidance
 
     def resolve(symbols: list[str]) -> list[dict]:
         return t212.resolve_symbols(symbols, all_instruments)
 
     decision = ai.get_suggestion(strategy, resolve, alloc, mem, risk)
+    # One-shot: consume user guidance after a successful AI decision.
+    if guidance:
+        user_guidance.clear()
     decision["since_last_cycle"] = {
         "pnl": pnl_ctx["pnl"],
         "pnl_pct": pnl_ctx["pnl_pct"],
@@ -368,13 +384,9 @@ def run_cycle(risk: str) -> dict:
         )
 
     try:
-        performance.record_snapshot(t212.get_account())
-    except Exception:
-        pass
-
-    # Baseline for next cycle's "since last talk" P&L %.
-    try:
-        store_cycle_baseline(t212.get_account())
+        refreshed, _ = t212.portfolio_view()
+        performance.record_snapshot(refreshed)
+        store_cycle_baseline(refreshed)
     except Exception:
         store_cycle_baseline(account)
 

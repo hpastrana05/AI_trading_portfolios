@@ -1,4 +1,14 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const envSwitch = document.getElementById("env-switch-link");
+  if (envSwitch && envSwitch.dataset.otherPort) {
+    const url = new URL(window.location.href);
+    url.port = envSwitch.dataset.otherPort;
+    url.pathname = "/";
+    url.search = "";
+    url.hash = "";
+    envSwitch.href = url.toString();
+  }
+
   const startForm = document.querySelector("form[action='/start']");
   if (startForm) {
     startForm.addEventListener("submit", () => {

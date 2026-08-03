@@ -16,6 +16,7 @@ import performance
 import t212
 import timeutil
 import usage
+import user_guidance
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -23,20 +24,31 @@ _ACCOUNT_CACHE: dict[str, object] = {"ts": 0.0, "data": None}
 _POSITIONS_CACHE: dict[str, object] = {"ts": 0.0, "data": None}
 
 
-def _get_account_cached() -> dict:
+def _get_portfolio_cached() -> tuple[dict, list[dict]]:
+    """Investable account + tradeable positions (pies excluded)."""
     now = time.time()
-    if _ACCOUNT_CACHE["data"] is None or now - float(_ACCOUNT_CACHE["ts"]) > 5:
-        _ACCOUNT_CACHE["data"] = t212.get_account()
+    account_stale = _ACCOUNT_CACHE["data"] is None or now - float(_ACCOUNT_CACHE["ts"]) > 5
+    positions_stale = _POSITIONS_CACHE["data"] is None or now - float(_POSITIONS_CACHE["ts"]) > 1
+    if account_stale or positions_stale:
+        account, positions = t212.portfolio_view()
+        _ACCOUNT_CACHE["data"] = account
         _ACCOUNT_CACHE["ts"] = now
-    return _ACCOUNT_CACHE["data"]  # type: ignore[return-value]
+        _POSITIONS_CACHE["data"] = positions
+        _POSITIONS_CACHE["ts"] = now
+    return (
+        _ACCOUNT_CACHE["data"],  # type: ignore[return-value]
+        _POSITIONS_CACHE["data"],  # type: ignore[return-value]
+    )
+
+
+def _get_account_cached() -> dict:
+    account, _ = _get_portfolio_cached()
+    return account
 
 
 def _get_positions_cached() -> list[dict]:
-    now = time.time()
-    if _POSITIONS_CACHE["data"] is None or now - float(_POSITIONS_CACHE["ts"]) > 1:
-        _POSITIONS_CACHE["data"] = t212.get_positions()
-        _POSITIONS_CACHE["ts"] = now
-    return _POSITIONS_CACHE["data"]  # type: ignore[return-value]
+    _, positions = _get_portfolio_cached()
+    return positions
 
 
 @asynccontextmanager
@@ -51,6 +63,9 @@ app = FastAPI(title="AI Trading Autopilot", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 templates.env.filters["local_time"] = timeutil.format_local
+templates.env.globals["other_env_url"] = config.OTHER_ENV_URL
+templates.env.globals["other_env_port"] = config.OTHER_ENV_PORT
+templates.env.globals["other_env"] = config.OTHER_ENV
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -88,6 +103,7 @@ def index(request: Request):
             "next_run": next_run,
             "weekend": timeutil.is_weekend(),
             "error": error,
+            "guidance": user_guidance.load(),
         },
     )
 
@@ -158,7 +174,13 @@ def performance_api(range: str = "max"):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request, saved: int = 0, error: str | None = None):
+def settings_page(
+    request: Request,
+    saved: int = 0,
+    guidance_saved: int = 0,
+    guidance_cleared: int = 0,
+    error: str | None = None,
+):
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -166,7 +188,10 @@ def settings_page(request: Request, saved: int = 0, error: str | None = None):
             "active": "settings",
             "env": config.T212_ENV,
             "rules": guardrails.load(),
+            "guidance": user_guidance.load(),
             "saved": bool(saved),
+            "guidance_saved": bool(guidance_saved),
+            "guidance_cleared": bool(guidance_cleared),
             "error": error,
         },
     )
@@ -203,11 +228,26 @@ def settings_save(
                     "max_trades_per_day": max_trades_per_day or None,
                     "max_order_amount": max_order_amount or None,
                 },
+                "guidance": user_guidance.load(),
                 "saved": False,
+                "guidance_saved": False,
+                "guidance_cleared": False,
                 "error": str(exc),
             },
             status_code=400,
         )
+
+
+@app.post("/guidance")
+def guidance_save(text: str = Form("")):
+    user_guidance.save(text)
+    return RedirectResponse(url="/settings?guidance_saved=1", status_code=303)
+
+
+@app.post("/guidance/clear")
+def guidance_clear():
+    user_guidance.clear()
+    return RedirectResponse(url="/settings?guidance_cleared=1", status_code=303)
 
 
 @app.get("/usage", response_class=HTMLResponse)
