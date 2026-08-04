@@ -12,6 +12,7 @@
       <span class="badge">Data: {{ env | lower }} only</span>
       {% if can_reset %}
       <span class="badge">Baseline {{ "%.0f"|format(demo_baseline) }} €</span>
+      <span class="badge">Since {{ demo_start_date }}</span>
       {% else %}
       <span class="badge">Deposits excluded from P&amp;L</span>
       {% endif %}

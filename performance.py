@@ -21,6 +21,22 @@ def _default_baseline() -> float:
     return 0.0
 
 
+def _demo_start_dt() -> datetime:
+    """DEMO portfolio origin day (local app timezone, start of day)."""
+    raw = (getattr(config, "DEMO_START_DATE", None) or "2026-07-30").strip()
+    try:
+        day = datetime.strptime(raw[:10], "%Y-%m-%d").date()
+    except ValueError:
+        day = datetime(2026, 7, 30).date()
+    return datetime(
+        day.year, day.month, day.day, 0, 0, 0, tzinfo=timeutil.app_tz()
+    )
+
+
+def _demo_start_iso() -> str:
+    return _demo_start_dt().isoformat()
+
+
 def load_capital() -> dict:
     path = _capital_path()
     data = {
@@ -221,22 +237,34 @@ def build_performance(range_key: str = "max") -> dict:
     if snapshots:
         currency = snapshots[-1].get("currency", "")
 
-    # DEMO: synthetic start at baseline so chart has a fixed 5000€ origin.
+    # DEMO: synthetic start at baseline on DEMO_START_DATE (default 2026-07-30).
     points_src = list(snapshots)
     if config.T212_ENV == "DEMO" and capital.get("baseline"):
         baseline = float(capital["baseline"])
-        if not points_src or abs(float(points_src[0]["total_value"]) - baseline) > 0.01:
-            first_ts = (
-                points_src[0]["timestamp"]
-                if points_src
-                else timeutil.now_iso()
-            )
-            # Place baseline just before first real point (or now).
-            try:
-                first_dt = _parse_ts(first_ts) - timedelta(seconds=1)
-                seed_ts = first_dt.isoformat()
-            except (TypeError, ValueError):
-                seed_ts = first_ts
+        seed_ts = _demo_start_iso()
+        has_seed = bool(
+            points_src
+            and abs(float(points_src[0]["total_value"]) - baseline) < 0.01
+            and str(points_src[0].get("timestamp", "")).startswith(seed_ts[:10])
+        )
+        if not has_seed:
+            # Drop a previous synthetic seed if present with wrong date/value.
+            if (
+                points_src
+                and abs(float(points_src[0]["total_value"]) - baseline) < 0.01
+                and len(points_src) > 1
+            ):
+                # Keep real history; replace only the leading synthetic-looking point
+                # when it's clearly the old "1s before first snapshot" seed.
+                try:
+                    gap = (
+                        _parse_ts(points_src[1]["timestamp"])
+                        - _parse_ts(points_src[0]["timestamp"])
+                    ).total_seconds()
+                    if gap < 5:
+                        points_src = points_src[1:]
+                except (TypeError, ValueError):
+                    pass
             points_src = [
                 {
                     "timestamp": seed_ts,
@@ -256,6 +284,7 @@ def build_performance(range_key: str = "max") -> dict:
                 "net_deposits": float(capital.get("net_deposits") or 0),
                 "net_invested": float(capital.get("baseline") or 0)
                 + float(capital.get("net_deposits") or 0),
+                "start_date": config.DEMO_START_DATE if config.T212_ENV == "DEMO" else None,
             },
             "metrics": {
                 "total_pnl": 0.0,
@@ -319,6 +348,7 @@ def build_performance(range_key: str = "max") -> dict:
             "baseline": capital.get("baseline"),
             "net_deposits": float(capital.get("net_deposits") or 0),
             "net_invested": net_invested_now,
+            "start_date": config.DEMO_START_DATE if config.T212_ENV == "DEMO" else None,
         },
         "metrics": {
             "total_pnl": total_pnl,

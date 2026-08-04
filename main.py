@@ -85,8 +85,9 @@ def index(request: Request):
         error = str(exc)
 
     next_run = None
+    interval = autopilot.get_interval_minutes(state)
     if state.get("running"):
-        next_run = timeutil.next_trading_aligned().isoformat()
+        next_run = timeutil.next_trading_aligned(interval_minutes=interval).isoformat()
 
     return templates.TemplateResponse(
         request,
@@ -99,7 +100,13 @@ def index(request: Request):
             "strategy": config.STRATEGY,
             "env": config.T212_ENV,
             "state": state,
-            "interval": config.AUTOPILOT_INTERVAL_MINUTES,
+            "interval": interval,
+            "interval_label": autopilot.format_interval(interval),
+            "interval_options": [
+                {"minutes": m, "label": autopilot.format_interval(m)}
+                for m in (15, 30, 45, 60, 90, 120, 180, 240, 360, 720, 1440)
+            ],
+            "interval_option_minutes": [15, 30, 45, 60, 90, 120, 180, 240, 360, 720, 1440],
             "next_run": next_run,
             "weekend": timeutil.is_weekend(),
             "error": error,
@@ -123,6 +130,12 @@ def stop_autopilot():
 @app.post("/risk")
 def set_risk(risk: str = Form("medium")):
     autopilot.set_risk(risk)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/interval")
+def set_interval(interval_minutes: str = Form("60")):
+    autopilot.set_interval(interval_minutes)
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -169,6 +182,7 @@ def performance_page(request: Request, reset: int = 0, deposit_saved: int = 0):
             "can_reset": config.T212_ENV == "DEMO",
             "can_deposit": config.T212_ENV == "LIVE",
             "demo_baseline": config.DEMO_BASELINE,
+            "demo_start_date": config.DEMO_START_DATE,
             "reset_done": bool(reset),
             "deposit_saved": bool(deposit_saved),
         },

@@ -124,6 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (capitalHint) {
       const parts = [];
       if (baseline != null) parts.push(`Baseline ${Number(baseline).toFixed(2)} ${currency}`);
+      if (capital.start_date) parts.push(`since ${capital.start_date}`);
       if (deposits > 0) parts.push(`deposits +${deposits.toFixed(2)} ${currency} (excluded from P&L)`);
       capitalHint.textContent = parts.join(" · ");
     }

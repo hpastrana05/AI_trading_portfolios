@@ -39,22 +39,54 @@ def _state_path():
 
 def load_state() -> dict:
     path = _state_path()
-    if path.exists():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pass
-    return {
+    defaults = {
         "running": False,
         "risk": "medium",
+        "interval_minutes": int(config.AUTOPILOT_INTERVAL_MINUTES),
         "last_run": None,
         "last_error": None,
         "last_summary": None,
     }
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            defaults.update(raw)
+        except json.JSONDecodeError:
+            pass
+    defaults["interval_minutes"] = _normalize_interval(
+        defaults.get("interval_minutes", config.AUTOPILOT_INTERVAL_MINUTES)
+    )
+    return defaults
 
 
 def save_state(state: dict) -> None:
     _state_path().write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _normalize_interval(value) -> int:
+    try:
+        minutes = int(float(value))
+    except (TypeError, ValueError):
+        minutes = int(config.AUTOPILOT_INTERVAL_MINUTES)
+    return max(5, min(24 * 60, minutes))
+
+
+def get_interval_minutes(state: dict | None = None) -> int:
+    state = state if state is not None else load_state()
+    return _normalize_interval(
+        state.get("interval_minutes", config.AUTOPILOT_INTERVAL_MINUTES)
+    )
+
+
+def format_interval(minutes) -> str:
+    """Human label: minutes under 1h, otherwise hours (e.g. 1h, 1.5h, 24h)."""
+    m = _normalize_interval(minutes)
+    if m < 60:
+        return f"{m} min"
+    hours = m / 60
+    if hours == int(hours):
+        return f"{int(hours)}h"
+    return f"{hours:g}h"
 
 
 def risk_prompt(risk: str) -> str:
@@ -413,14 +445,26 @@ def run_cycle(risk: str) -> dict:
 def _wait_until_next_slot() -> bool:
     """Sleep until the next weekday-aligned clock slot. Returns False if stopped.
 
-    Important: lock the target once. Recalculating next_aligned() each second
-    can skip the slot (at 11:00:00.1, 'next' becomes 12:00).
+    Recalculates the target if interval_minutes changes while waiting.
     """
-    target = timeutil.next_trading_aligned()
-    print(f"[autopilot] waiting until {target.isoformat()}", flush=True)
+    interval = get_interval_minutes()
+    target = timeutil.next_trading_aligned(interval_minutes=interval)
+    print(
+        f"[autopilot] waiting until {target.isoformat()} (every {interval} min)",
+        flush=True,
+    )
     while True:
-        if not load_state().get("running"):
+        state = load_state()
+        if not state.get("running"):
             return False
+        current_interval = get_interval_minutes(state)
+        if current_interval != interval:
+            interval = current_interval
+            target = timeutil.next_trading_aligned(interval_minutes=interval)
+            print(
+                f"[autopilot] interval → {interval} min, waiting until {target.isoformat()}",
+                flush=True,
+            )
         remaining = (target - timeutil.now()).total_seconds()
         if remaining <= 0:
             return True
@@ -488,12 +532,16 @@ def start(risk: str | None = None, force_run: bool = True) -> dict:
         if risk:
             state["risk"] = risk.lower()
         state["running"] = True
+        state["interval_minutes"] = get_interval_minutes(state)
         save_state(state)
         if _thread is None or not _thread.is_alive():
             _thread = threading.Thread(target=_loop, daemon=True)
             _thread.start()
 
-    should_run = force_run or timeutil.missed_schedule(state.get("last_run"))
+    interval = get_interval_minutes(state)
+    should_run = force_run or timeutil.missed_schedule(
+        state.get("last_run"), interval_minutes=interval
+    )
     if should_run:
         reason = "manual start" if force_run else "catch-up after missed slot"
         print(f"[autopilot] immediate run ({reason})", flush=True)
@@ -503,10 +551,8 @@ def start(risk: str | None = None, force_run: bool = True) -> dict:
         except Exception as exc:
             _save_run_result(None, exc)
     else:
-        print(
-            f"[autopilot] resume without catch-up; next slot {timeutil.next_trading_aligned().isoformat()}",
-            flush=True,
-        )
+        nxt = timeutil.next_trading_aligned(interval_minutes=interval)
+        print(f"[autopilot] resume without catch-up; next slot {nxt.isoformat()}", flush=True)
     return load_state()
 
 
@@ -521,6 +567,18 @@ def set_risk(risk: str) -> dict:
     state = load_state()
     state["risk"] = risk.lower()
     save_state(state)
+    return state
+
+
+def set_interval(minutes) -> dict:
+    state = load_state()
+    state["interval_minutes"] = _normalize_interval(minutes)
+    save_state(state)
+    print(
+        f"[autopilot] interval set to {state['interval_minutes']} min "
+        f"(running={bool(state.get('running'))})",
+        flush=True,
+    )
     return state
 
 

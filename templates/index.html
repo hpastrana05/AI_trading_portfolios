@@ -13,7 +13,7 @@
       <span class="badge stopped">Stopped</span>
       {% endif %}
       <span class="badge risk-{{ state.risk }}">Risk: {{ state.risk }}</span>
-      <span class="badge">Every {{ interval }} min (weekdays)</span>
+      <span class="badge">Every {{ interval_label }} · weekdays</span>
       {% if weekend %}
       <span class="badge stopped">Weekend pause</span>
       {% endif %}
@@ -49,6 +49,20 @@
           <option value="low" {% if state.risk == 'low' %}selected{% endif %}>Low — conservative</option>
           <option value="medium" {% if state.risk == 'medium' %}selected{% endif %}>Medium — balanced</option>
           <option value="high" {% if state.risk == 'high' %}selected{% endif %}>High — aggressive</option>
+        </select>
+        <button type="submit" class="btn-secondary">Apply</button>
+      </form>
+      <form method="post" action="/interval" class="risk-form">
+        <label for="interval_minutes">Cycle interval</label>
+        <select name="interval_minutes" id="interval_minutes">
+          {% for opt in interval_options %}
+          <option value="{{ opt.minutes }}" {% if interval == opt.minutes %}selected{% endif %}>
+            {{ opt.label }}
+          </option>
+          {% endfor %}
+          {% if interval not in interval_option_minutes %}
+          <option value="{{ interval }}" selected>{{ interval_label }} (current)</option>
+          {% endif %}
         </select>
         <button type="submit" class="btn-secondary">Apply</button>
       </form>

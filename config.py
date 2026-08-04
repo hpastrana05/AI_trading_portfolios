@@ -119,3 +119,5 @@ OTHER_ENV = "DEMO" if T212_ENV == "LIVE" else "LIVE"
 
 # Performance: DEMO P&L is measured from this starting capital.
 DEMO_BASELINE = float(os.getenv("DEMO_BASELINE", "5000"))
+# First day of the DEMO portfolio for performance charts (YYYY-MM-DD).
+DEMO_START_DATE = os.getenv("DEMO_START_DATE", "2026-07-30")
