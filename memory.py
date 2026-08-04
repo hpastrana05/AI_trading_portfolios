@@ -1,4 +1,5 @@
 import json
+import re
 
 import config
 import timeutil
@@ -17,6 +18,13 @@ DEFAULT_MEMORY = {
     "recent_skips": [],
     "updated_at": None,
 }
+
+# Lessons/notes that falsely turn temporary failures into permanent ticker bans.
+_BAN_LESSON_RE = re.compile(
+    r"(do not use|never use|avoid .*ticker|banned|not allowed|invalid ticker|"
+    r"strictly limited|exact allowed list|allowed tickers are)",
+    re.I,
+)
 
 
 def load() -> dict:
@@ -37,16 +45,39 @@ def save(data: dict) -> None:
     _memory_path().write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def _filter_ban_lessons(lessons: list) -> list:
+    cleaned = []
+    for lesson in lessons or []:
+        text = str(lesson).strip()
+        if not text:
+            continue
+        if _BAN_LESSON_RE.search(text):
+            continue
+        cleaned.append(text)
+    return cleaned[-20:]
+
+
 def apply_update(update: dict, thinking: str = "") -> dict:
     data = load()
     for key in ("portfolio_thesis", "management_plan", "notes"):
         if update.get(key):
-            data[key] = update[key]
+            text = str(update[key])
+            # Strip AI attempts to lock a permanent allow-list into notes/plan.
+            if key in ("notes", "management_plan") and _BAN_LESSON_RE.search(text):
+                text = re.sub(
+                    r"(?i).{0,80}(strictly limited|exact allowed list|allowed tickers are).{0,120}",
+                    "",
+                    text,
+                ).strip() or data.get(key, "")
+            data[key] = text
     if update.get("lessons"):
-        existing = data.get("lessons") or []
+        existing = _filter_ban_lessons(data.get("lessons") or [])
         for lesson in update["lessons"]:
-            if lesson and lesson not in existing:
-                existing.append(lesson)
+            if not lesson or _BAN_LESSON_RE.search(str(lesson)):
+                continue
+            text = str(lesson).strip()
+            if text and text not in existing:
+                existing.append(text)
         data["lessons"] = existing[-20:]
     if thinking:
         log = data.get("thinking_log") or []
@@ -66,20 +97,21 @@ def record_execution_feedback(
     skipped: list[dict],
     actual_allocation: dict[str, float],
 ) -> dict:
-    """Learn from fills vs skips so memory never claims unheld positions."""
+    """Record fills/skips without permanently banning tickers."""
     if not skipped and not executed:
         return load()
 
     data = load()
-    lessons = list(data.get("lessons") or [])
+    lessons = _filter_ban_lessons(data.get("lessons") or [])
     recent = list(data.get("recent_skips") or [])
 
     for item in skipped:
         ticker = item.get("ticker", "?")
         reason = item.get("reason", "unknown")
         lesson = (
-            f"Skipped {ticker}: {reason}. "
-            "Do not assume this ticker is held until it appears in Current allocation."
+            f"Temporary skip on {ticker}: {reason}. "
+            "Position was NOT filled that cycle — do not claim it is held. "
+            "You MAY retry this ticker later; skips are not permanent bans."
         )
         if lesson not in lessons:
             lessons.append(lesson)
@@ -112,20 +144,12 @@ def record_execution_feedback(
             sorted({str(s.get("ticker")) for s in skipped if s.get("ticker")})
         )
         data["notes"] = (
-            f"EXECUTION FACT (authoritative, overrides prior assumptions): "
-            f"{len(skipped)} order(s) were SKIPPED and NOT filled "
+            f"EXECUTION FACT (this cycle only): {len(skipped)} order(s) were NOT filled "
             f"({skipped_tickers}). "
             f"Actual allocation now: {held or 'no stock/ETF positions'} "
             f"with cash ≈ {cash_pct:.1f}%. "
-            f"Never claim a skipped ticker is held. Prefer alternatives or smaller size next cycle."
+            f"Do not claim those tickers are held. Skips are temporary — retry is allowed."
         )
-        plan = data.get("management_plan") or ""
-        correction = (
-            f" Next: retry with different sizing/tickers after skips ({skipped_tickers}); "
-            "trust Current allocation only."
-        )
-        if "trust Current allocation only" not in plan:
-            data["management_plan"] = (plan + correction).strip()
 
     save(data)
     return data
@@ -136,7 +160,6 @@ def skips_prompt_text(data: dict | None = None) -> str:
     skips = data.get("recent_skips") or []
     if not skips:
         return ""
-    # Last few unique ticker skips for the next cycle prompt.
     lines = []
     seen = set()
     for item in reversed(skips):
@@ -150,6 +173,28 @@ def skips_prompt_text(data: dict | None = None) -> str:
     if not lines:
         return ""
     return (
-        "Recent SKIPPED orders (NOT held — do not allocate as if filled):\n"
+        "Recent TEMPORARY order failures (NOT held that time — still eligible to retry; "
+        "NOT a permanent ban):\n"
         + "\n".join(lines)
     )
+
+
+def clear_ticker_scars() -> dict:
+    """Remove skip history and ban-like lessons so the AI can pick freely again."""
+    data = load()
+    data["recent_skips"] = []
+    data["lessons"] = _filter_ban_lessons(data.get("lessons") or [])
+    notes = data.get("notes") or ""
+    if "EXECUTION FACT" in notes or _BAN_LESSON_RE.search(notes):
+        data["notes"] = (
+            "Ticker universe is open each cycle. Temporary order failures are not bans. "
+            "Trust Current allocation for what is actually held."
+        )
+    plan = data.get("management_plan") or ""
+    if _BAN_LESSON_RE.search(plan) or "trust Current allocation only" in plan:
+        data["management_plan"] = (
+            "Each cycle may pick any suitable Trading212 symbols. "
+            "Rebalance using Current allocation as truth; retry failed orders when appropriate."
+        )
+    save(data)
+    return data

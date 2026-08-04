@@ -108,6 +108,8 @@ def gemini_pick_symbols(
     prompt = f"""You manage a Trading212 portfolio autonomously.
 {strategy}
 Pick up to {max_picks} stock/ETF symbols (short names only, e.g. AAPL, VOO — NOT exchange suffixes).
+You may choose ANY suitable liquid names for the strategy — do NOT limit yourself to tickers mentioned in memory.
+Temporary past order failures are NOT bans; you may retry those symbols.
 You decide position count and sizing later — pick the best universe for this strategy.
 If the current holdings already fit the strategy, you may keep the same symbols.{holdings}{mem}
 
@@ -166,11 +168,14 @@ def gemini_decide(
 {strategy}
 {rules_text}
 You control allocation, position sizes, cash level, entries and exits.
-Only use these exact Trading212 tickers plus CASH:
+For THIS cycle's orders only, use these exact Trading212 tickers plus CASH
+(this shortlist comes from this cycle's picks — it is NOT a permanent allow-list):
 {catalog}
-Allowed: {", ".join(allowed)} and CASH.
+This-cycle order tickers: {", ".join(allowed)} and CASH.
 Weights must sum to 1.0.
 Include estimated_prices for tickers not currently held.
+IMPORTANT: Do NOT write memory claiming you are permanently limited to this shortlist.
+Next cycle the pick step can choose completely different symbols again.
 IMPORTANT about period P&L: use "Since last cycle" P&L % as context for the decision.
 Your job is to pick the best allocation given that P&L — improve when better options exist.
 Avoid decisions likely to turn a positive period P&L negative, or to deepen a negative period P&L.
@@ -178,8 +183,9 @@ Do NOT choose hold/no_changes merely because period P&L is positive.
 Set "no_changes": true ONLY if, after comparing alternatives, holding is truly the best option.
 Explain that comparison in thinking/reasoning.
 Current allocation is the ONLY source of truth for held positions.
-If notes/lessons say an order was SKIPPED, that ticker is NOT held — pick another plan or smaller size.
-Never write a memory_update that claims positions which are absent from Current allocation.{allocation_hint}{mem}
+If notes say an order was temporarily SKIPPED, that ticker is NOT held yet — but it is still eligible later.
+Never write a memory_update that claims positions which are absent from Current allocation.
+Never write lessons that permanently ban tickers because of a one-off execution error.{allocation_hint}{mem}
 
 Research:
 {research}

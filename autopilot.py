@@ -295,7 +295,9 @@ def run_cycle(risk: str) -> dict:
         "Do not allocate more than available cash. "
         "Portfolio value and holdings exclude Trading212 pies — never manage or assume pie cash/shares. "
         "Current allocation is the ONLY source of truth for what is held. "
-        "If memory/plan mentions a ticker that is not in Current allocation, that order was skipped or never filled — do not pretend it is held. "
+        "Each cycle you may pick ANY suitable symbols; the shortlist used for orders this cycle is temporary — "
+        "never treat it as a permanent allow-list or hard guardrail in memory. "
+        "Temporary order failures are not bans — those tickers remain eligible. "
         "Choose the best option for the portfolio; use no_changes=true only when holding is clearly best after comparing alternatives — never as a default just because P&L is green."
     )
     skip_ctx = memory.skips_prompt_text(mem)

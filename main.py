@@ -158,12 +158,23 @@ def history(request: Request):
 
 
 @app.get("/memory", response_class=HTMLResponse)
-def memory_page(request: Request):
+def memory_page(request: Request, cleared: int = 0):
     return templates.TemplateResponse(
         request,
         "memory.html",
-        {"active": "memory", "memory": memory.load(), "env": config.T212_ENV},
+        {
+            "active": "memory",
+            "memory": memory.load(),
+            "env": config.T212_ENV,
+            "cleared": bool(cleared),
+        },
     )
+
+
+@app.post("/memory/unlock-tickers")
+def memory_unlock_tickers():
+    memory.clear_ticker_scars()
+    return RedirectResponse(url="/memory?cleared=1", status_code=303)
 
 
 @app.get("/performance", response_class=HTMLResponse)

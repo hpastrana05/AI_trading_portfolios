@@ -14,6 +14,27 @@
     </div>
   </header>
 
+  {% if cleared %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
+    Ticker bans / skip scars cleared. Next cycles can pick freely again (retries allowed).
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-bottom:1.25rem">
+    <div class="demo-reset-box" style="margin:0;padding:0;border:0">
+      <div>
+        <strong>Unlock ticker universe</strong>
+        <p class="meta" style="margin:0.35rem 0 0">
+          Clears skip history and ban-like lessons/notes so temporary order errors do not lock the AI
+          into a tiny allow-list. Does not delete the full thinking log.
+        </p>
+      </div>
+      <form method="post" action="/memory/unlock-tickers" onsubmit="return confirm('Clear skip scars and ticker-ban lessons for this environment?');">
+        <button type="submit" class="btn-secondary">Unlock tickers</button>
+      </form>
+    </div>
+  </div>
+
   <div class="memory-grid">
     <div class="card memory-section">
       <h2>Portfolio thesis</h2>
