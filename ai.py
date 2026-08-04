@@ -100,7 +100,9 @@ def gemini_pick_symbols(
             f"\nPortfolio memory:\n"
             f"Thesis: {memory.get('portfolio_thesis', '')}\n"
             f"Plan: {memory.get('management_plan', '')}\n"
-            f"Notes: {memory.get('notes', '')}"
+            f"Lessons: {json.dumps(memory.get('lessons', []))}\n"
+            f"Notes: {memory.get('notes', '')}\n"
+            "Trust Current holdings above memory if they disagree (skipped orders are not holdings)."
         )
 
     prompt = f"""You manage a Trading212 portfolio autonomously.
@@ -174,7 +176,10 @@ Your job is to pick the best allocation given that P&L — improve when better o
 Avoid decisions likely to turn a positive period P&L negative, or to deepen a negative period P&L.
 Do NOT choose hold/no_changes merely because period P&L is positive.
 Set "no_changes": true ONLY if, after comparing alternatives, holding is truly the best option.
-Explain that comparison in thinking/reasoning.{allocation_hint}{mem}
+Explain that comparison in thinking/reasoning.
+Current allocation is the ONLY source of truth for held positions.
+If notes/lessons say an order was SKIPPED, that ticker is NOT held — pick another plan or smaller size.
+Never write a memory_update that claims positions which are absent from Current allocation.{allocation_hint}{mem}
 
 Research:
 {research}

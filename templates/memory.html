@@ -46,6 +46,25 @@
     </div>
 
     <div class="card memory-section">
+      <h2>Recent skipped orders</h2>
+      {% if memory.recent_skips %}
+      <ul>
+        {% for skip in memory.recent_skips|reverse %}
+        <li>
+          <span class="ticker">{{ skip.ticker }}</span>
+          — {{ skip.reason }}
+          {% if skip.at %}<span class="meta"> ({{ skip.at | local_time }})</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty" style="padding:1rem">
+        <p>None yet.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card memory-section">
       <h2>Thinking log</h2>
       {% if memory.thinking_log %}
       {% for entry in memory.thinking_log | reverse %}

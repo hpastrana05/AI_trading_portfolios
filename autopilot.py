@@ -294,8 +294,13 @@ def run_cycle(risk: str) -> dict:
         f"Available cash: {account['cash_available']:.2f} {account['currency']}. "
         "Do not allocate more than available cash. "
         "Portfolio value and holdings exclude Trading212 pies — never manage or assume pie cash/shares. "
+        "Current allocation is the ONLY source of truth for what is held. "
+        "If memory/plan mentions a ticker that is not in Current allocation, that order was skipped or never filled — do not pretend it is held. "
         "Choose the best option for the portfolio; use no_changes=true only when holding is clearly best after comparing alternatives — never as a default just because P&L is green."
     )
+    skip_ctx = memory.skips_prompt_text(mem)
+    if skip_ctx:
+        strategy += "\n" + skip_ctx
     guidance = user_guidance.prompt_text()
     if guidance:
         strategy += "\n" + guidance
@@ -330,6 +335,7 @@ def run_cycle(risk: str) -> dict:
     }
 
     guard_notes: list[str] = []
+    trades_before_filters: list[dict] = []
     if hold:
         trades, prep_notes = [], ["AI chose to hold — no trades"]
     else:
@@ -339,6 +345,7 @@ def run_cycle(risk: str) -> dict:
         target, clamp_notes = guardrails.apply_to_allocation(target, rules)
         guard_notes.extend(clamp_notes)
         trades = compute_trades(target, account, positions, available, estimated)
+        trades_before_filters = list(trades)
         trades, prep_notes = prepare_trades(trades, account["cash_available"])
         trades, filter_notes = guardrails.filter_trades(
             trades, rules, trades_today=journal.count_trades_today()
@@ -352,6 +359,17 @@ def run_cycle(risk: str) -> dict:
 
     executed = []
     skipped = []
+    kept_keys = {(t["ticker"], t["action"]) for t in trades}
+    for trade in trades_before_filters:
+        key = (trade["ticker"], trade["action"])
+        if key not in kept_keys:
+            skipped.append(
+                {
+                    "ticker": trade["ticker"],
+                    "reason": "Blocked before order (cash limits or guardrails)",
+                }
+            )
+
     cash_left = account["cash_available"]
     cycle_id = decision.get("cycle_id")
     cycle_reasoning = decision.get("reasoning", "")
@@ -415,12 +433,18 @@ def run_cycle(risk: str) -> dict:
             thinking=decision.get("thinking", ""),
         )
 
+    # Refresh actual holdings after fills, then teach memory about skips/fills.
     try:
-        refreshed, _ = t212.portfolio_view()
+        refreshed, refreshed_positions = t212.portfolio_view()
+        actual_alloc = current_allocation(refreshed, refreshed_positions)
         performance.record_snapshot(refreshed)
         store_cycle_baseline(refreshed)
     except Exception:
+        actual_alloc = current_allocation(account, positions)
         store_cycle_baseline(account)
+
+    if skipped or executed:
+        memory.record_execution_feedback(executed, skipped, actual_alloc)
 
     summary_notes = prep_notes + guard_notes
     if pnl_ctx.get("pnl_pct") is not None:
