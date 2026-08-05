@@ -81,6 +81,7 @@ def index(request: Request):
         performance.record_snapshot(account)
         positions = _get_positions_cached()
         alloc = autopilot.current_allocation(account, positions)
+        state = autopilot.refresh_protection(float(account.get("total_value") or 0))
     except Exception as exc:
         error = str(exc)
 
@@ -111,6 +112,7 @@ def index(request: Request):
             "weekend": timeutil.is_weekend(),
             "error": error,
             "guidance": user_guidance.load(),
+            "protection_rules": guardrails.load(),
         },
     )
 
@@ -130,6 +132,12 @@ def stop_autopilot():
 @app.post("/risk")
 def set_risk(risk: str = Form("medium")):
     autopilot.set_risk(risk)
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/protection/clear")
+def clear_protection(risk: str = Form(None)):
+    autopilot.clear_protection(risk)
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -178,7 +186,13 @@ def memory_unlock_tickers():
 
 
 @app.get("/performance", response_class=HTMLResponse)
-def performance_page(request: Request, reset: int = 0, deposit_saved: int = 0):
+def performance_page(
+    request: Request,
+    reset: int = 0,
+    deposit_saved: int = 0,
+    withdrawal_saved: int = 0,
+    sell_done: int = 0,
+):
     try:
         account = _get_account_cached()
         performance.record_snapshot(account)
@@ -196,6 +210,10 @@ def performance_page(request: Request, reset: int = 0, deposit_saved: int = 0):
             "demo_start_date": config.DEMO_START_DATE,
             "reset_done": bool(reset),
             "deposit_saved": bool(deposit_saved),
+            "withdrawal_saved": bool(withdrawal_saved),
+            "sell_done": bool(sell_done),
+            "error": None,
+            "sell_result": None,
         },
     )
 
@@ -232,6 +250,52 @@ def performance_deposit(amount: str = Form("")):
     return RedirectResponse(url="/performance?deposit_saved=1", status_code=303)
 
 
+@app.post("/performance/withdrawal")
+def performance_withdrawal(amount: str = Form("")):
+    if config.T212_ENV != "LIVE":
+        return RedirectResponse(url="/performance", status_code=303)
+    try:
+        performance.add_withdrawal(float(amount), reason="manual")
+    except Exception:
+        return RedirectResponse(url="/performance", status_code=303)
+    return RedirectResponse(url="/performance?withdrawal_saved=1", status_code=303)
+
+
+@app.post("/performance/sell-for-withdrawal")
+def performance_sell_for_withdrawal(request: Request, amount: str = Form("")):
+    if config.T212_ENV != "LIVE":
+        return RedirectResponse(url="/performance", status_code=303)
+
+    def _page(status_code: int = 200, **extra):
+        ctx = {
+            "active": "performance",
+            "env": config.T212_ENV,
+            "can_reset": False,
+            "can_deposit": True,
+            "demo_baseline": config.DEMO_BASELINE,
+            "demo_start_date": config.DEMO_START_DATE,
+            "reset_done": False,
+            "deposit_saved": False,
+            "withdrawal_saved": False,
+            "sell_done": False,
+            "error": None,
+            "sell_result": None,
+        }
+        ctx.update(extra)
+        return templates.TemplateResponse(
+            request, "performance.html", ctx, status_code=status_code
+        )
+
+    try:
+        result = autopilot.execute_balanced_withdrawal_sells(float(amount))
+    except Exception as exc:
+        return _page(status_code=400, error=str(exc))
+
+    _ACCOUNT_CACHE["data"] = None
+    _POSITIONS_CACHE["data"] = None
+    return _page(sell_done=True, sell_result=result)
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request,
@@ -263,6 +327,9 @@ def settings_save(
     min_cash_pct: str = Form(""),
     max_trades_per_day: str = Form(""),
     max_order_amount: str = Form(""),
+    safe_dd_pct: str = Form(""),
+    stop_dd_pct: str = Form(""),
+    safe_min_cash_pct: str = Form(""),
 ):
     try:
         guardrails.save(
@@ -271,6 +338,9 @@ def settings_save(
                 "min_cash_pct": min_cash_pct,
                 "max_trades_per_day": max_trades_per_day,
                 "max_order_amount": max_order_amount,
+                "safe_dd_pct": safe_dd_pct,
+                "stop_dd_pct": stop_dd_pct,
+                "safe_min_cash_pct": safe_min_cash_pct,
             }
         )
         return RedirectResponse(url="/settings?saved=1", status_code=303)
@@ -286,6 +356,9 @@ def settings_save(
                     "min_cash_pct": min_cash_pct or None,
                     "max_trades_per_day": max_trades_per_day or None,
                     "max_order_amount": max_order_amount or None,
+                    "safe_dd_pct": safe_dd_pct or None,
+                    "stop_dd_pct": stop_dd_pct or None,
+                    "safe_min_cash_pct": safe_min_cash_pct or None,
                 },
                 "guidance": user_guidance.load(),
                 "saved": False,

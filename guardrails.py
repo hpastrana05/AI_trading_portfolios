@@ -9,6 +9,10 @@ DEFAULT_GUARDRAILS = {
     "min_cash_pct": None,  # percent 0-100
     "max_trades_per_day": None,  # int
     "max_order_amount": None,  # absolute currency units
+    # Drawdown circuit breaker (None = disabled)
+    "safe_dd_pct": None,  # % from equity peak → force low risk + defensive cash
+    "stop_dd_pct": None,  # % from equity peak → hard-stop autopilot
+    "safe_min_cash_pct": 50,  # min cash while SAFE MODE is active
 }
 
 
@@ -32,6 +36,10 @@ def load() -> dict:
 
 def save(data: dict) -> dict:
     cleaned = {key: _normalize(key, data.get(key)) for key in DEFAULT_GUARDRAILS}
+    safe_dd = cleaned.get("safe_dd_pct")
+    stop_dd = cleaned.get("stop_dd_pct")
+    if safe_dd is not None and stop_dd is not None and float(stop_dd) <= float(safe_dd):
+        raise ValueError("stop_dd_pct must be greater than safe_dd_pct")
     cleaned["updated_at"] = timeutil.now_iso()
     _path().write_text(json.dumps(cleaned, indent=2), encoding="utf-8")
     return cleaned
@@ -39,10 +47,20 @@ def save(data: dict) -> dict:
 
 def _normalize(key: str, value):
     if value is None or value == "" or str(value).strip().lower() in {"null", "none", "ai"}:
+        # safe_min_cash_pct defaults to 50 when blank (still used only in safe mode)
+        if key == "safe_min_cash_pct":
+            return 50.0
         return None
-    if key in ("max_position_pct", "min_cash_pct", "max_order_amount"):
+    if key in (
+        "max_position_pct",
+        "min_cash_pct",
+        "max_order_amount",
+        "safe_dd_pct",
+        "stop_dd_pct",
+        "safe_min_cash_pct",
+    ):
         num = float(value)
-        if key.endswith("_pct"):
+        if key.endswith("_pct") or key in ("safe_dd_pct", "stop_dd_pct", "safe_min_cash_pct"):
             if num < 0 or num > 100:
                 raise ValueError(f"{key} must be between 0 and 100")
         elif num < 0:
@@ -67,6 +85,13 @@ def prompt_text(rules: dict | None = None) -> str:
         lines.append(f"- Max trades per day: {rules['max_trades_per_day']}")
     if rules.get("max_order_amount") is not None:
         lines.append(f"- Max single order amount: {rules['max_order_amount']}")
+    if rules.get("safe_dd_pct") is not None:
+        lines.append(
+            f"- Safe mode if drawdown from peak ≥ {rules['safe_dd_pct']}% "
+            f"(min cash {rules.get('safe_min_cash_pct', 50)}%)"
+        )
+    if rules.get("stop_dd_pct") is not None:
+        lines.append(f"- Hard stop if drawdown from peak ≥ {rules['stop_dd_pct']}%")
     if not lines:
         return "Hard guardrails: none (you decide sizing and cash)."
     return "Hard guardrails (must respect):\n" + "\n".join(lines)

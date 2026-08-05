@@ -14,7 +14,7 @@
       <span class="badge">Baseline {{ "%.0f"|format(demo_baseline) }} €</span>
       <span class="badge">Since {{ demo_start_date }}</span>
       {% else %}
-      <span class="badge">Deposits excluded from P&amp;L</span>
+      <span class="badge">Deposits / withdrawals excluded from P&amp;L</span>
       {% endif %}
     </div>
   </header>
@@ -28,6 +28,24 @@
   <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
     Deposit registered. It will not count as trading P&amp;L.
   </div>
+  {% endif %}
+  {% if withdrawal_saved %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
+    Withdrawal registered. It will not count as a trading loss.
+  </div>
+  {% endif %}
+  {% if sell_done and sell_result %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
+    Balanced sells finished: {{ sell_result.executed | length }} executed
+    {% if sell_result.skipped %}, {{ sell_result.skipped | length }} skipped{% endif %}.
+    {% if sell_result.account %}
+    Cash now ≈ {{ "%.2f"|format(sell_result.account.cash_available) }} {{ sell_result.account.currency }}.
+    {% endif %}
+    Next: withdraw in Trading212, then register the withdrawal below.
+  </div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-error"><strong>Could not prepare withdrawal sells.</strong> {{ error }}</div>
   {% endif %}
 
   <div class="card">
@@ -84,6 +102,50 @@
     {% if can_deposit %}
     <div class="demo-reset-box">
       <div>
+        <strong>Sell evenly for withdrawal</strong>
+        <p class="meta" style="margin:0.35rem 0 0">
+          Enter how much you want to withdraw. Uses existing cash first, then sells the same
+          fraction of every position so weights stay balanced. Then withdraw in Trading212 and register below.
+        </p>
+      </div>
+      <form method="post" action="/performance/sell-for-withdrawal" class="settings-form" style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap"
+            onsubmit="return confirm('Sell a proportional slice of each holding to free this cash amount?');">
+        <label style="margin:0">
+          <span>Amount to free</span>
+          <input type="number" name="amount" step="0.01" min="0.01" required placeholder="e.g. 300">
+        </label>
+        <button type="submit" class="btn-primary">Sell balanced</button>
+      </form>
+    </div>
+
+    {% if sell_result and sell_result.plan and sell_result.plan.sells %}
+    <div class="card" style="margin-top:1rem;background:var(--bg-elevated)">
+      <h2 style="font-size:1rem;margin-bottom:0.75rem">Last balanced sell plan</h2>
+      <p class="meta" style="margin-bottom:0.75rem">
+        {% for note in sell_result.notes %}{{ note }} {% endfor %}
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Ticker</th><th>Qty sold</th><th>Price</th><th>Proceeds</th></tr>
+          </thead>
+          <tbody>
+            {% for t in sell_result.executed %}
+            <tr>
+              <td><span class="ticker">{{ t.ticker }}</span></td>
+              <td>{{ "%.4f"|format(t.quantity|abs) }}</td>
+              <td>{{ "%.2f"|format(t.price) }}</td>
+              <td>{{ "%.2f"|format(t.amount|abs) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="demo-reset-box">
+      <div>
         <strong>Register deposit</strong>
         <p class="meta" style="margin:0.35rem 0 0">
           When you add money to Live, register it here so it is excluded from P&amp;L and returns.
@@ -95,6 +157,22 @@
           <input type="number" name="amount" step="0.01" min="0.01" required placeholder="e.g. 200">
         </label>
         <button type="submit" class="btn-secondary">Add deposit</button>
+      </form>
+    </div>
+
+    <div class="demo-reset-box">
+      <div>
+        <strong>Register withdrawal</strong>
+        <p class="meta" style="margin:0.35rem 0 0">
+          After you withdraw in Trading212, register the same amount here so it does not look like a loss.
+        </p>
+      </div>
+      <form method="post" action="/performance/withdrawal" class="settings-form" style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap">
+        <label style="margin:0">
+          <span>Amount</span>
+          <input type="number" name="amount" step="0.01" min="0.01" required placeholder="e.g. 300">
+        </label>
+        <button type="submit" class="btn-secondary">Add withdrawal</button>
       </form>
     </div>
     {% endif %}

@@ -125,7 +125,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const parts = [];
       if (baseline != null) parts.push(`Baseline ${Number(baseline).toFixed(2)} ${currency}`);
       if (capital.start_date) parts.push(`since ${capital.start_date}`);
-      if (deposits > 0) parts.push(`deposits +${deposits.toFixed(2)} ${currency} (excluded from P&L)`);
+      if (deposits > 0.009) {
+        parts.push(`net deposits +${deposits.toFixed(2)} ${currency} (excluded from P&L)`);
+      } else if (deposits < -0.009) {
+        parts.push(`net withdrawals ${deposits.toFixed(2)} ${currency} (excluded from P&L)`);
+      }
       capitalHint.textContent = parts.join(" · ");
     }
   }

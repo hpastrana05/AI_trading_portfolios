@@ -101,6 +101,29 @@ def add_deposit(amount: float, reason: str = "manual") -> dict:
             "timestamp": timeutil.now_iso(),
             "amount": amount,
             "reason": reason,
+            "type": "deposit",
+        }
+    )
+    capital["deposits"] = deposits
+    return save_capital(capital)
+
+
+def add_withdrawal(amount: float, reason: str = "manual") -> dict:
+    """Record cash taken out so it does not look like a trading loss."""
+    amount = float(amount)
+    if amount <= 0:
+        raise ValueError("Withdrawal amount must be > 0")
+    capital = load_capital()
+    if capital.get("baseline") is None:
+        raise ValueError("Set a performance baseline before registering withdrawals")
+    capital["net_deposits"] = float(capital.get("net_deposits") or 0) - amount
+    deposits = list(capital.get("deposits") or [])
+    deposits.append(
+        {
+            "timestamp": timeutil.now_iso(),
+            "amount": -amount,
+            "reason": reason,
+            "type": "withdrawal",
         }
     )
     capital["deposits"] = deposits

@@ -13,6 +13,14 @@
       <span class="badge stopped">Stopped</span>
       {% endif %}
       <span class="badge risk-{{ state.risk }}">Risk: {{ state.risk }}</span>
+      {% if state.protection_mode == 'safe' %}
+      <span class="badge warning">SAFE MODE</span>
+      {% elif state.protection_mode == 'stopped' %}
+      <span class="badge stopped">HARD STOP</span>
+      {% endif %}
+      {% if state.drawdown_pct is not none %}
+      <span class="badge">DD {{ '%.1f'|format(state.drawdown_pct) }}%</span>
+      {% endif %}
       <span class="badge">Every {{ interval_label }} · weekdays</span>
       {% if weekend %}
       <span class="badge stopped">Weekend pause</span>
@@ -37,6 +45,38 @@
     </div>
     <p class="guidance-banner-text">{{ guidance.text[:280] }}{% if guidance.text|length > 280 %}…{% endif %}</p>
     <a href="/settings" class="guidance-banner-link">Edit guidance</a>
+  </div>
+  {% endif %}
+
+  {% if state.protection_mode in ('safe', 'stopped') %}
+  <div class="guidance-banner protection-banner {% if state.protection_mode == 'stopped' %}protection-stop{% else %}protection-safe{% endif %}">
+    <div class="guidance-banner-top">
+      {% if state.protection_mode == 'stopped' %}
+      <span class="badge stopped">Hard stop</span>
+      {% else %}
+      <span class="badge warning">Safe mode</span>
+      {% endif %}
+      <span class="meta">
+        Drawdown {{ '%.1f'|format(state.drawdown_pct or 0) }}% from peak
+        {% if state.protection_dd_pct is not none %}· triggered at {{ '%.1f'|format(state.protection_dd_pct) }}%{% endif %}
+      </span>
+    </div>
+    <p class="guidance-banner-text">
+      {% if state.protection_mode == 'stopped' %}
+      Autopilot halted. Change risk below (or Start) to unlock and trade again.
+      {% else %}
+      Risk forced to low and defensive cash applied. Change risk below anytime to unlock.
+      {% endif %}
+      Unlock stays in effect until drawdown eases, then protection can trigger again.
+      {% if protection_rules.safe_dd_pct is not none or protection_rules.stop_dd_pct is not none %}
+      Thresholds: safe {{ protection_rules.safe_dd_pct if protection_rules.safe_dd_pct is not none else 'off' }}% · stop {{ protection_rules.stop_dd_pct if protection_rules.stop_dd_pct is not none else 'off' }}%.
+      {% endif %}
+    </p>
+    <form method="post" action="/protection/clear" class="inline" style="margin-top:0.75rem">
+      <input type="hidden" name="risk" value="{{ state.risk_before_protection or 'medium' }}">
+      <button type="submit" class="btn-secondary">Clear protection · restore {{ state.risk_before_protection or 'medium' }}</button>
+    </form>
+    <a href="/settings" class="guidance-banner-link">Edit thresholds</a>
   </div>
   {% endif %}
 

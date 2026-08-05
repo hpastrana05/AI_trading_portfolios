@@ -640,6 +640,21 @@ button:disabled {
   text-decoration: underline;
 }
 
+.protection-banner.protection-safe {
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.protection-banner.protection-stop {
+  border-color: rgba(239, 68, 68, 0.45);
+  background:
+    linear-gradient(135deg, rgba(239, 68, 68, 0.12), transparent 55%),
+    var(--bg-card);
+}
+
+.protection-banner .guidance-banner-link {
+  margin-left: 0.75rem;
+}
+
 .demo-reset-box {
   margin-top: 1.5rem;
   padding-top: 1.25rem;

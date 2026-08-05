@@ -7,7 +7,7 @@
     <h1>Guardrails</h1>
     <div class="header-meta">
       <span class="badge {% if env == 'LIVE' %}live{% else %}demo{% endif %}">{{ env }}</span>
-      <span class="badge">Leave blank = AI decides</span>
+      <span class="badge">Leave blank = AI decides / disabled</span>
       {% if guidance.text %}
       <span class="badge warning">Guidance pending</span>
       {% endif %}
@@ -47,6 +47,26 @@
         <label>
           <span>Max order amount</span>
           <input type="number" step="0.01" min="0" name="max_order_amount" placeholder="AI decides" value="{{ rules.max_order_amount if rules.max_order_amount is not none else '' }}">
+        </label>
+      </div>
+
+      <h3 style="margin:1.5rem 0 0.5rem;font-size:1rem">Drawdown protection</h3>
+      <p class="meta" style="margin-bottom:1rem">
+        Measured from equity peak. Leave blank to disable that level.
+        Hard stop % must be higher than safe alert %. Changing risk on the dashboard unlocks you again.
+      </p>
+      <div class="form-grid">
+        <label>
+          <span>Safe alert DD %</span>
+          <input type="number" step="0.1" min="0" max="100" name="safe_dd_pct" placeholder="Disabled" value="{{ rules.safe_dd_pct if rules.safe_dd_pct is not none else '' }}">
+        </label>
+        <label>
+          <span>Hard stop DD %</span>
+          <input type="number" step="0.1" min="0" max="100" name="stop_dd_pct" placeholder="Disabled" value="{{ rules.stop_dd_pct if rules.stop_dd_pct is not none else '' }}">
+        </label>
+        <label>
+          <span>Min cash in safe mode %</span>
+          <input type="number" step="0.1" min="0" max="100" name="safe_min_cash_pct" placeholder="50" value="{{ rules.safe_min_cash_pct if rules.safe_min_cash_pct is not none else '' }}">
         </label>
       </div>
       <button type="submit" class="btn-primary" style="margin-top:1rem">Save guardrails</button>

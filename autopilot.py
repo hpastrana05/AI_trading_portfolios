@@ -3,6 +3,7 @@ import threading
 import time
 
 import ai
+import circuit
 import config
 import guardrails
 import journal
@@ -46,6 +47,13 @@ def load_state() -> dict:
         "last_run": None,
         "last_error": None,
         "last_summary": None,
+        "protection_mode": "off",
+        "protection_override": False,
+        "equity_peak": None,
+        "drawdown_pct": None,
+        "risk_before_protection": None,
+        "protection_dd_pct": None,
+        "protection_at": None,
     }
     if path.exists():
         try:
@@ -255,6 +263,155 @@ def prepare_trades(trades: list[dict], cash_available: float) -> tuple[list[dict
     return sells + buys, notes
 
 
+def plan_balanced_withdrawal_sells(
+    amount: float,
+    account: dict | None = None,
+    positions: list[dict] | None = None,
+) -> dict:
+    """Plan proportional sells so cash covers a withdrawal without skewing weights."""
+    amount = float(amount)
+    if amount <= 0:
+        raise ValueError("Withdrawal amount must be > 0")
+
+    if account is None or positions is None:
+        account, positions = t212.portfolio_view()
+    else:
+        account, positions = t212.portfolio_view(account, positions)
+
+    cash = float(account.get("cash_available") or 0)
+    invested = sum(float(p.get("value") or 0) for p in positions)
+    currency = account.get("currency", "")
+
+    if cash >= amount - 0.01:
+        return {
+            "amount": amount,
+            "currency": currency,
+            "cash_available": cash,
+            "cash_shortfall": 0.0,
+            "sells": [],
+            "expected_proceeds": 0.0,
+            "notes": [
+                f"Already enough cash ({cash:.2f} {currency}) for {amount:.2f} {currency}. No sells needed."
+            ],
+        }
+
+    shortfall = amount - cash
+    if invested <= 0.01:
+        raise ValueError(
+            f"Need {shortfall:.2f} more cash but there are no tradeable positions to sell"
+        )
+
+    # Sell the same fraction of every position so relative weights stay similar.
+    fraction = min(1.0, shortfall / invested)
+    sells: list[dict] = []
+    expected = 0.0
+    notes: list[str] = []
+
+    for pos in sorted(positions, key=lambda p: p["ticker"]):
+        value = float(pos.get("value") or 0)
+        price = float(pos.get("current_price") or 0)
+        qty = float(pos.get("quantity") or 0)
+        if value <= 0 or price <= 0 or qty <= 0:
+            continue
+        target_proceeds = value * fraction
+        sell_qty = min(qty, round(target_proceeds / price, 4))
+        if sell_qty < 0.0001:
+            continue
+        # Prefer selling almost-all tiny leftovers when fraction is high.
+        if fraction > 0.98 and (qty - sell_qty) * price < 1.0:
+            sell_qty = round(qty, 4)
+        proceeds = sell_qty * price
+        expected += proceeds
+        sells.append(
+            {
+                "ticker": pos["ticker"],
+                "action": "sell",
+                "quantity": -sell_qty,
+                "amount": -proceeds,
+                "price": price,
+                "weight_before": value / (invested + cash) if (invested + cash) else 0,
+            }
+        )
+
+    if not sells:
+        raise ValueError("Could not build any sell orders for this amount")
+
+    if expected + cash + 0.5 < amount:
+        notes.append(
+            f"After proportional sells, expected cash ≈ {cash + expected:.2f} "
+            f"(target {amount:.2f}). May need a slightly larger amount or full exit."
+        )
+    else:
+        notes.append(
+            f"Sell ~{fraction * 100:.1f}% of each position to raise ≈ {expected:.2f} {currency} "
+            f"(plus existing cash {cash:.2f})."
+        )
+
+    return {
+        "amount": amount,
+        "currency": currency,
+        "cash_available": cash,
+        "cash_shortfall": shortfall,
+        "sell_fraction": fraction,
+        "sells": sells,
+        "expected_proceeds": expected,
+        "expected_cash_after": cash + expected,
+        "notes": notes,
+    }
+
+
+def execute_balanced_withdrawal_sells(amount: float) -> dict:
+    """Sell proportionally across holdings to free cash for a manual withdrawal."""
+    account, positions = t212.portfolio_view()
+    plan = plan_balanced_withdrawal_sells(amount, account, positions)
+    executed = []
+    skipped = []
+
+    for trade in plan["sells"]:
+        try:
+            result = t212.place_market_order(trade["ticker"], trade["quantity"])
+        except Exception as exc:
+            skipped.append({"ticker": trade["ticker"], "reason": str(exc)})
+            continue
+
+        entry = {
+            "type": "withdrawal_rebalance",
+            "ticker": trade["ticker"],
+            "action": "sell",
+            "quantity": trade["quantity"],
+            "price": trade["price"],
+            "amount": trade["amount"],
+            "reason": f"Balanced sell to free cash for withdrawal of {amount:.2f}",
+            "env": config.T212_ENV,
+            "where": config.T212_ENV,
+            "order_id": result.get("id"),
+            "status": result.get("status"),
+        }
+        journal.log_trade(entry)
+        executed.append({**trade, **result, **entry})
+
+    try:
+        refreshed, refreshed_positions = t212.portfolio_view()
+    except Exception:
+        refreshed, refreshed_positions = account, positions
+
+    return {
+        "plan": plan,
+        "executed": executed,
+        "skipped": skipped,
+        "account": refreshed,
+        "positions": refreshed_positions,
+        "notes": list(plan.get("notes") or [])
+        + (
+            [f"Executed {len(executed)} sell(s)"]
+            if executed
+            else []
+        )
+        + ([f"Skipped {len(skipped)} sell(s)"] if skipped else []),
+        "timestamp": timeutil.now_iso(),
+    }
+
+
 def run_cycle(risk: str) -> dict:
     if timeutil.is_weekend():
         note = "Weekend — trading paused (no AI calls)"
@@ -281,15 +438,36 @@ def run_cycle(risk: str) -> dict:
         }
 
     account, positions = t212.portfolio_view()
+    state = load_state()
+    state, prot_notes = circuit.evaluate(state, float(account.get("total_value") or 0))
+    if prot_notes:
+        print(f"[autopilot] protection: {'; '.join(prot_notes)}", flush=True)
+    save_state(state)
+
+    if state.get("protection_mode") == "stopped":
+        note = prot_notes[0] if prot_notes else "Hard stop active — no trading"
+        return {
+            "decision": None,
+            "executed": [],
+            "skipped": [],
+            "trades_planned": [],
+            "notes": [note],
+            "timestamp": timeutil.now_iso(),
+        }
+
+    risk = (state.get("risk") or risk or "medium").lower()
     alloc = current_allocation(account, positions)
     all_instruments = t212.get_instruments()
     available = t212.available_ticker_set(all_instruments)
     mem = memory.load()
-    rules = guardrails.load()
+    base_rules = guardrails.load()
+    rules = circuit.safe_rules_overlay(base_rules, state)
     pnl_ctx = cycle_pnl_context(account)
+    protection_ctx = circuit.prompt_text(state, base_rules)
     strategy = (
         f"{config.STRATEGY}\n{risk_prompt(risk)}\n"
         f"{guardrails.prompt_text(rules)}\n"
+        f"{protection_ctx}\n"
         f"{pnl_ctx['text']}\n"
         f"Available cash: {account['cash_available']:.2f} {account['currency']}. "
         "Do not allocate more than available cash. "
@@ -448,9 +626,11 @@ def run_cycle(risk: str) -> dict:
     if skipped or executed:
         memory.record_execution_feedback(executed, skipped, actual_alloc)
 
-    summary_notes = prep_notes + guard_notes
+    summary_notes = list(prot_notes) + prep_notes + guard_notes
     if pnl_ctx.get("pnl_pct") is not None:
         summary_notes = [f"Since last cycle: {pnl_ctx['pnl_pct']:+.2f}%"] + summary_notes
+    if state.get("protection_mode") == "safe":
+        summary_notes = [f"SAFE MODE active (DD {state.get('drawdown_pct')}%)"] + summary_notes
     if skipped:
         summary_notes = summary_notes + [f"Skipped {len(skipped)} trade(s)"]
     if hold and not executed:
@@ -555,7 +735,10 @@ def start(risk: str | None = None, force_run: bool = True) -> dict:
     global _thread
     with _lock:
         state = load_state()
-        if risk:
+        # Starting after a hard stop is an explicit user resume.
+        if state.get("protection_mode") in ("safe", "stopped"):
+            state = circuit.clear_manual(state, risk or state.get("risk"))
+        elif risk:
             state["risk"] = risk.lower()
         state["running"] = True
         state["interval_minutes"] = get_interval_minutes(state)
@@ -590,9 +773,31 @@ def stop() -> dict:
 
 
 def set_risk(risk: str) -> dict:
+    """Change risk by hand — also clears SAFE / hard-stop lock."""
     state = load_state()
-    state["risk"] = risk.lower()
+    state = circuit.clear_manual(state, risk)
     save_state(state)
+    print(
+        f"[autopilot] risk set to {state['risk']} (protection cleared)",
+        flush=True,
+    )
+    return state
+
+
+def clear_protection(risk: str | None = None) -> dict:
+    state = load_state()
+    state = circuit.clear_manual(state, risk or state.get("risk"))
+    save_state(state)
+    return state
+
+
+def refresh_protection(equity: float) -> dict:
+    """Update peak / drawdown / mode without running a cycle."""
+    state = load_state()
+    state, notes = circuit.evaluate(state, float(equity or 0))
+    save_state(state)
+    if notes:
+        print(f"[autopilot] protection: {'; '.join(notes)}", flush=True)
     return state
 
 
