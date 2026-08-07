@@ -16,6 +16,8 @@ DEFAULT_MEMORY = {
     "notes": "",
     "thinking_log": [],
     "recent_skips": [],
+    # When False, order failures are not stored/fed to the AI as ticker scars.
+    "skip_tracking": False,
     "updated_at": None,
 }
 
@@ -35,9 +37,40 @@ def load() -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
         merged = dict(DEFAULT_MEMORY)
         merged.update(data)
+        # Missing key in old files → disabled (feature is optional / off by default).
+        if "skip_tracking" not in data:
+            merged["skip_tracking"] = False
+        else:
+            merged["skip_tracking"] = bool(data.get("skip_tracking"))
         return merged
     except (json.JSONDecodeError, OSError):
         return dict(DEFAULT_MEMORY)
+
+
+def skip_tracking_enabled(data: dict | None = None) -> bool:
+    data = data or load()
+    return bool(data.get("skip_tracking"))
+
+
+def set_skip_tracking(enabled: bool) -> dict:
+    data = load()
+    data["skip_tracking"] = bool(enabled)
+    if not enabled:
+        # Turning off also clears scars so they cannot linger in prompts later.
+        data["recent_skips"] = []
+        data["lessons"] = [
+            lesson
+            for lesson in _filter_ban_lessons(data.get("lessons") or [])
+            if "Temporary skip on" not in str(lesson)
+        ]
+        notes = data.get("notes") or ""
+        if "EXECUTION FACT" in notes:
+            data["notes"] = (
+                "Ticker skip tracking is off. Trust Current allocation for what is held."
+            )
+    save(data)
+    return data
+
 
 
 def save(data: dict) -> None:
@@ -102,26 +135,28 @@ def record_execution_feedback(
         return load()
 
     data = load()
+    track_skips = skip_tracking_enabled(data)
     lessons = _filter_ban_lessons(data.get("lessons") or [])
-    recent = list(data.get("recent_skips") or [])
+    recent = list(data.get("recent_skips") or []) if track_skips else []
 
-    for item in skipped:
-        ticker = item.get("ticker", "?")
-        reason = item.get("reason", "unknown")
-        lesson = (
-            f"Temporary skip on {ticker}: {reason}. "
-            "Position was NOT filled that cycle — do not claim it is held. "
-            "You MAY retry this ticker later; skips are not permanent bans."
-        )
-        if lesson not in lessons:
-            lessons.append(lesson)
-        recent.append(
-            {
-                "at": timeutil.now_iso(),
-                "ticker": ticker,
-                "reason": reason,
-            }
-        )
+    if track_skips:
+        for item in skipped:
+            ticker = item.get("ticker", "?")
+            reason = item.get("reason", "unknown")
+            lesson = (
+                f"Temporary skip on {ticker}: {reason}. "
+                "Position was NOT filled that cycle — do not claim it is held. "
+                "You MAY retry this ticker later; skips are not permanent bans."
+            )
+            if lesson not in lessons:
+                lessons.append(lesson)
+            recent.append(
+                {
+                    "at": timeutil.now_iso(),
+                    "ticker": ticker,
+                    "reason": reason,
+                }
+            )
 
     for item in executed:
         ticker = item.get("ticker", "?")
@@ -131,9 +166,9 @@ def record_execution_feedback(
             lessons.append(lesson)
 
     data["lessons"] = lessons[-20:]
-    data["recent_skips"] = recent[-20:]
+    data["recent_skips"] = recent[-20:] if track_skips else []
 
-    if skipped:
+    if track_skips and skipped:
         cash_pct = float(actual_allocation.get("CASH", 0.0)) * 100
         held = {
             k: round(float(v), 4)
@@ -157,6 +192,8 @@ def record_execution_feedback(
 
 def skips_prompt_text(data: dict | None = None) -> str:
     data = data or load()
+    if not skip_tracking_enabled(data):
+        return ""
     skips = data.get("recent_skips") or []
     if not skips:
         return ""

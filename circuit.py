@@ -24,6 +24,18 @@ def update_peak(state: dict, equity: float) -> dict:
     return state
 
 
+def trading_equity(raw_equity: float) -> float:
+    """Equity excluding registered net deposits/withdrawals (avoids deposit spikes)."""
+    try:
+        import performance
+
+        capital = performance.load_capital()
+        net = float(capital.get("net_deposits") or 0)
+        return float(raw_equity or 0) - net
+    except Exception:
+        return float(raw_equity or 0)
+
+
 def evaluate(state: dict, equity: float, rules: dict | None = None) -> tuple[dict, list[str]]:
     """Update protection_mode from drawdown vs optional thresholds.
 
@@ -31,9 +43,11 @@ def evaluate(state: dict, equity: float, rules: dict | None = None) -> tuple[dic
     - safe_dd_pct / stop_dd_pct = None → that level is disabled
     - Manual risk changes should call clear_manual() so the user can raise risk again
     - After manual clear, protection_override stays on until DD recovers (hysteresis)
+    - Peak/DD use trading equity (deposits/withdrawals excluded)
     """
     rules = rules or guardrails.load()
     notes: list[str] = []
+    equity = trading_equity(equity)
     state = update_peak(state, equity)
     peak = float(state.get("equity_peak") or 0)
     dd = current_drawdown_pct(equity, peak)

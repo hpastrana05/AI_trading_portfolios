@@ -166,7 +166,7 @@ def history(request: Request):
 
 
 @app.get("/memory", response_class=HTMLResponse)
-def memory_page(request: Request, cleared: int = 0):
+def memory_page(request: Request, cleared: int = 0, tracking: str | None = None):
     return templates.TemplateResponse(
         request,
         "memory.html",
@@ -175,6 +175,7 @@ def memory_page(request: Request, cleared: int = 0):
             "memory": memory.load(),
             "env": config.T212_ENV,
             "cleared": bool(cleared),
+            "tracking_saved": tracking,
         },
     )
 
@@ -183,6 +184,16 @@ def memory_page(request: Request, cleared: int = 0):
 def memory_unlock_tickers():
     memory.clear_ticker_scars()
     return RedirectResponse(url="/memory?cleared=1", status_code=303)
+
+
+@app.post("/memory/skip-tracking")
+def memory_skip_tracking(enabled: str = Form("0")):
+    on = str(enabled).strip().lower() in {"1", "true", "on", "yes"}
+    memory.set_skip_tracking(on)
+    return RedirectResponse(
+        url=f"/memory?tracking={'on' if on else 'off'}",
+        status_code=303,
+    )
 
 
 @app.get("/performance", response_class=HTMLResponse)

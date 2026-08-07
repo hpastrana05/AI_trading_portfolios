@@ -98,14 +98,16 @@ def add_deposit(amount: float, reason: str = "manual") -> dict:
     deposits = list(capital.get("deposits") or [])
     deposits.append(
         {
-            "timestamp": timeutil.now_iso(),
+            "timestamp": _cashflow_timestamp(amount),
             "amount": amount,
             "reason": reason,
             "type": "deposit",
         }
     )
     capital["deposits"] = deposits
-    return save_capital(capital)
+    saved = save_capital(capital)
+    _adjust_protection_peak_for_cashflow(amount)
+    return saved
 
 
 def add_withdrawal(amount: float, reason: str = "manual") -> dict:
@@ -120,19 +122,137 @@ def add_withdrawal(amount: float, reason: str = "manual") -> dict:
     deposits = list(capital.get("deposits") or [])
     deposits.append(
         {
-            "timestamp": timeutil.now_iso(),
+            "timestamp": _cashflow_timestamp(-amount),
             "amount": -amount,
             "reason": reason,
             "type": "withdrawal",
         }
     )
     capital["deposits"] = deposits
-    return save_capital(capital)
+    saved = save_capital(capital)
+    _adjust_protection_peak_for_cashflow(-amount)
+    return saved
+
+
+def _cashflow_timestamp(signed_amount: float) -> str:
+    """Stamp cashflows just before a matching portfolio jump so the chart stays flat."""
+    anchor = _find_matching_jump_ts(signed_amount, _read_snapshots())
+    return anchor or timeutil.now_iso()
+
+
+def _find_matching_jump_ts(
+    signed_amount: float,
+    snapshots: list[dict],
+    *,
+    used_indices: set[int] | None = None,
+    near: datetime | None = None,
+    max_age_hours: float = 168,
+) -> str | None:
+    """Find a consecutive snapshot jump ≈ signed_amount; return ISO just before the post-jump point."""
+    if abs(signed_amount) < 0.01 or len(snapshots) < 2:
+        return None
+    used_indices = used_indices if used_indices is not None else set()
+    ref = near or timeutil.now()
+    best_i: int | None = None
+    best_ts: str | None = None
+    best_score: tuple[float, float] | None = None
+
+    for i in range(1, len(snapshots)):
+        if i in used_indices:
+            continue
+        try:
+            prev_v = float(snapshots[i - 1]["total_value"])
+            cur_v = float(snapshots[i]["total_value"])
+            delta = cur_v - prev_v
+            when = _parse_ts(snapshots[i]["timestamp"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if signed_amount * delta <= 0:
+            continue
+        abs_err = abs(delta - signed_amount)
+        rel = abs_err / max(abs(signed_amount), 1.0)
+        if rel > 0.2 and abs_err > 10:
+            continue
+        age_s = abs((ref - when).total_seconds())
+        if age_s > max_age_hours * 3600:
+            continue
+        score = (rel, age_s)
+        if best_score is None or score < best_score:
+            best_score = score
+            best_i = i
+            best_ts = (when - timedelta(seconds=1)).isoformat()
+
+    if best_i is None or best_ts is None:
+        return None
+    used_indices.add(best_i)
+    return best_ts
+
+
+def _align_deposits_to_jumps(capital: dict, snapshots: list[dict]) -> dict:
+    """In-memory: snap deposit/withdrawal timestamps onto matching value jumps (heals old spikes)."""
+    deps = [dict(d) for d in (capital.get("deposits") or [])]
+    if not deps or len(snapshots) < 2:
+        return {**capital, "deposits": deps}
+
+    used: set[int] = set()
+    aligned: list[dict] = []
+    for dep in deps:
+        out = dict(dep)
+        try:
+            amount = float(dep.get("amount") or 0)
+            dep_ts = _parse_ts(dep["timestamp"])
+        except (TypeError, ValueError, KeyError):
+            aligned.append(out)
+            continue
+        if abs(amount) < 0.01:
+            aligned.append(out)
+            continue
+        anchor = _find_matching_jump_ts(
+            amount,
+            snapshots,
+            used_indices=used,
+            near=dep_ts,
+            max_age_hours=24 * 14,
+        )
+        if anchor:
+            out["timestamp"] = anchor
+        aligned.append(out)
+
+    return {**capital, "deposits": aligned}
+
+
+def _adjust_protection_peak_for_cashflow(signed_amount: float) -> None:
+    """Keep circuit-breaker peak on trading equity (exclude deposits/withdrawals)."""
+    try:
+        import autopilot
+
+        state = autopilot.load_state()
+        peak = state.get("equity_peak")
+        if peak is None:
+            return
+        # Deposit raised raw equity (and maybe peak); subtract it back.
+        # Withdrawal lowered raw equity; add it back so peak isn't artificially low.
+        state["equity_peak"] = max(0.0, float(peak) - float(signed_amount))
+        autopilot.save_state(state)
+    except Exception:
+        pass
 
 
 def _net_invested_at(capital: dict, when: datetime) -> float:
     baseline = float(capital.get("baseline") or 0)
     total = baseline
+    for dep in capital.get("deposits") or []:
+        try:
+            ts = _parse_ts(dep["timestamp"])
+            if ts <= when:
+                total += float(dep.get("amount") or 0)
+        except (KeyError, TypeError, ValueError):
+            continue
+    return total
+
+
+def _net_deposits_at(capital: dict, when: datetime) -> float:
+    total = 0.0
     for dep in capital.get("deposits") or []:
         try:
             ts = _parse_ts(dep["timestamp"])
@@ -297,6 +417,9 @@ def build_performance(range_key: str = "max") -> dict:
                 }
             ] + points_src
 
+    # Align cashflows to portfolio jumps so deposit registration timing does not spike P&L.
+    capital = _align_deposits_to_jumps(capital, points_src)
+
     if not points_src:
         return {
             "range": range_key.lower(),
@@ -332,7 +455,8 @@ def build_performance(range_key: str = "max") -> dict:
         filtered = [points_src[-1]]
 
     points = []
-    invested_series: list[float] = []
+    adjusted_series: list[float] = []
+    baseline = float(capital.get("baseline") or 0)
     for row in filtered:
         when = _parse_ts(row["timestamp"])
         invested = _net_invested_at(capital, when)
@@ -341,21 +465,22 @@ def build_performance(range_key: str = "max") -> dict:
         total = float(row["total_value"])
         pnl = total - invested
         pnl_pct = (pnl / invested * 100) if invested > 0 else 0.0
-        invested_series.append(invested + pnl)  # = total_value, for DD on equity
+        # Trading equity = portfolio minus external cashflows (same as baseline + pnl).
+        adjusted = baseline + pnl
+        adjusted_series.append(adjusted)
         points.append(
             {
                 "timestamp": row["timestamp"],
                 "total_value": total,
                 "net_invested": invested,
+                "adjusted_equity": adjusted,
                 "pnl": pnl,
                 "pnl_pct": pnl_pct,
             }
         )
 
-    # Drawdown on deposit-adjusted equity (total_value), same as market equity.
-    max_dd, max_dd_pct = _max_drawdown([p["total_value"] for p in points])
-    # Prefer drawdown on P&L curve relative to net invested peak of (invested+pnl)=value
-    # Already using total_value which is correct for portfolio equity DD.
+    # Drawdown on deposit-adjusted equity (excludes cash top-ups / withdrawals).
+    max_dd, max_dd_pct = _max_drawdown(adjusted_series)
 
     total_pnl = points[-1]["pnl"] if points else 0.0
     total_pnl_pct = points[-1]["pnl_pct"] if points else 0.0
