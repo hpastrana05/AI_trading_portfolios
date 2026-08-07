@@ -61,10 +61,18 @@ def load_capital() -> dict:
 
 
 def save_capital(data: dict) -> dict:
+    deposits = list(data.get("deposits") or [])
+    # Keep net_deposits consistent with the sum of recorded cashflows.
+    net = 0.0
+    for dep in deposits:
+        try:
+            net += float(dep.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
     payload = {
         "baseline": data.get("baseline"),
-        "net_deposits": float(data.get("net_deposits") or 0),
-        "deposits": list(data.get("deposits") or []),
+        "net_deposits": net,
+        "deposits": deposits,
         "updated_at": timeutil.now_iso(),
     }
     _capital_path().write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -427,9 +435,9 @@ def build_performance(range_key: str = "max") -> dict:
             "points": [],
             "capital": {
                 "baseline": capital.get("baseline"),
-                "net_deposits": float(capital.get("net_deposits") or 0),
+                "net_deposits": _sum_deposit_amounts(capital),
                 "net_invested": float(capital.get("baseline") or 0)
-                + float(capital.get("net_deposits") or 0),
+                + _sum_deposit_amounts(capital),
                 "start_date": config.DEMO_START_DATE if config.T212_ENV == "DEMO" else None,
             },
             "metrics": {
@@ -464,7 +472,6 @@ def build_performance(range_key: str = "max") -> dict:
             invested = float(row["total_value"])
         total = float(row["total_value"])
         pnl = total - invested
-        pnl_pct = (pnl / invested * 100) if invested > 0 else 0.0
         # Trading equity = portfolio minus external cashflows (same as baseline + pnl).
         adjusted = baseline + pnl
         adjusted_series.append(adjusted)
@@ -475,18 +482,26 @@ def build_performance(range_key: str = "max") -> dict:
                 "net_invested": invested,
                 "adjusted_equity": adjusted,
                 "pnl": pnl,
-                "pnl_pct": pnl_pct,
+                "pnl_pct": 0.0,  # filled below on deposit-neutral base
             }
         )
+
+    # % tracks adjusted equity (excludes deposits/withdrawals) so the curve
+    # does not cliff when capital is added — same shape as absolute P&L.
+    adj0 = adjusted_series[0] if adjusted_series else 0.0
+    for i, point in enumerate(points):
+        if adj0 > 0:
+            point["pnl_pct"] = (adjusted_series[i] / adj0 - 1.0) * 100.0
+        else:
+            point["pnl_pct"] = 0.0
 
     # Drawdown on deposit-adjusted equity (excludes cash top-ups / withdrawals).
     max_dd, max_dd_pct = _max_drawdown(adjusted_series)
 
     total_pnl = points[-1]["pnl"] if points else 0.0
     total_pnl_pct = points[-1]["pnl_pct"] if points else 0.0
-    net_invested_now = points[-1]["net_invested"] if points else float(
-        capital.get("baseline") or 0
-    ) + float(capital.get("net_deposits") or 0)
+    net_deposits = _sum_deposit_amounts(capital)
+    net_invested_now = float(baseline) + net_deposits
 
     return {
         "range": range_key.lower(),
@@ -494,7 +509,7 @@ def build_performance(range_key: str = "max") -> dict:
         "points": points,
         "capital": {
             "baseline": capital.get("baseline"),
-            "net_deposits": float(capital.get("net_deposits") or 0),
+            "net_deposits": net_deposits,
             "net_invested": net_invested_now,
             "start_date": config.DEMO_START_DATE if config.T212_ENV == "DEMO" else None,
         },
@@ -505,6 +520,17 @@ def build_performance(range_key: str = "max") -> dict:
             "max_dd_pct": max_dd_pct,
         },
     }
+
+
+def _sum_deposit_amounts(capital: dict) -> float:
+    total = 0.0
+    for dep in capital.get("deposits") or []:
+        try:
+            total += float(dep.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
 
 
 def reset_demo_local_data() -> dict:
