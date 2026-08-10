@@ -497,19 +497,22 @@ def build_performance(range_key: str = "max") -> dict:
             }
         )
 
-    # % tracks adjusted equity (excludes deposits/withdrawals) so the curve
-    # does not cliff when capital is added — same shape as absolute P&L.
+    # % and period P&L are relative to the first point in the selected range
+    # (for 1D/1W/… that includes the anchor point just before the window).
     adj0 = adjusted_series[0] if adjusted_series else 0.0
+    pnl0 = points[0]["pnl"] if points else 0.0
     for i, point in enumerate(points):
+        point["period_pnl"] = point["pnl"] - pnl0
         if adj0 > 0:
             point["pnl_pct"] = (adjusted_series[i] / adj0 - 1.0) * 100.0
         else:
             point["pnl_pct"] = 0.0
 
-    # Drawdown on deposit-adjusted equity (excludes cash top-ups / withdrawals).
+    # Drawdown on deposit-adjusted equity within the selected range.
     max_dd, max_dd_pct = _max_drawdown(adjusted_series)
 
-    total_pnl = points[-1]["pnl"] if points else 0.0
+    # Cards = P&L over the selected period (not lifetime since baseline).
+    total_pnl = points[-1]["period_pnl"] if points else 0.0
     total_pnl_pct = points[-1]["pnl_pct"] if points else 0.0
     net_deposits = _sum_deposit_amounts(capital)
     net_invested_now = float(baseline) + net_deposits

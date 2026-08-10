@@ -169,7 +169,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const labels = points.map((p) =>
       new Date(p.timestamp).toLocaleString("es-ES", { timeZone: "Europe/Madrid" })
     );
-    const pnl = points.map((p) => p.pnl);
+    // Period P&L for the selected range (1D/1W/…); falls back to absolute pnl.
+    const pnl = points.map((p) =>
+      p.period_pnl != null ? p.period_pnl : p.pnl
+    );
     const pnlPct = points.map((p) => p.pnl_pct);
 
     if (chart) chart.destroy();
@@ -179,7 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
         labels,
         datasets: [
           {
-            label: "Total P&L",
+            label: "Period P&L",
             data: pnl,
             borderColor: "#34d399",
             backgroundColor: "rgba(52,211,153,0.15)",
@@ -189,7 +192,7 @@ document.addEventListener("DOMContentLoaded", () => {
             tension: 0.25,
           },
           {
-            label: "Total P&L (%)",
+            label: "Period P&L (%)",
             data: pnlPct,
             borderColor: "#60a5fa",
             backgroundColor: "rgba(96,165,250,0.12)",
