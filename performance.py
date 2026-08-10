@@ -37,6 +37,16 @@ def _demo_start_iso() -> str:
     return _demo_start_dt().isoformat()
 
 
+def _sum_deposit_amounts(capital: dict) -> float:
+    total = 0.0
+    for dep in capital.get("deposits") or []:
+        try:
+            total += float(dep.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
 def load_capital() -> dict:
     path = _capital_path()
     data = {
@@ -50,13 +60,14 @@ def load_capital() -> dict:
             raw = json.loads(path.read_text(encoding="utf-8"))
             if raw.get("baseline") is not None:
                 data["baseline"] = float(raw["baseline"])
-            data["net_deposits"] = float(raw.get("net_deposits") or 0)
             data["deposits"] = list(raw.get("deposits") or [])
             data["updated_at"] = raw.get("updated_at")
         except (json.JSONDecodeError, OSError, TypeError, ValueError):
             pass
     if data["baseline"] is None and config.T212_ENV == "DEMO":
         data["baseline"] = _default_baseline()
+    # Always derive net from the deposit list (avoids stale doubled net_deposits).
+    data["net_deposits"] = _sum_deposit_amounts(data)
     return data
 
 
@@ -520,17 +531,6 @@ def build_performance(range_key: str = "max") -> dict:
             "max_dd_pct": max_dd_pct,
         },
     }
-
-
-def _sum_deposit_amounts(capital: dict) -> float:
-    total = 0.0
-    for dep in capital.get("deposits") or []:
-        try:
-            total += float(dep.get("amount") or 0)
-        except (TypeError, ValueError):
-            continue
-    return total
-
 
 
 def reset_demo_local_data() -> dict:
