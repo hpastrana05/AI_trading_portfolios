@@ -1,8 +1,7 @@
 import json
 import re
 
-import config
-import timeutil
+from app.core import config, timeutil
 
 
 def _memory_path():

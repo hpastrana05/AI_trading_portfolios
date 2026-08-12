@@ -69,6 +69,42 @@ Use the sidebar **Open DEMO** / **Open LIVE** link to jump between running insta
 - **Trade history** — all executed trades
 - **AI memory** — how the AI is managing the portfolio
 
+## Project structure
+
+Python code lives under `app/`. The root `main.py` is a thin entrypoint so `uvicorn main:app` keeps working (Docker, scripts, and local runs unchanged).
+
+```
+app/
+├── core/           Shared config and time helpers
+│   ├── config.py       .env, paths, Trading212/Gemini settings
+│   └── timeutil.py     App timezone, scheduling, formatting
+├── trading/        Broker integration
+│   ├── t212.py         Portfolio view, orders, symbol resolution
+│   └── api/            Low-level Trading212 REST wrappers
+├── engine/         Autopilot loop and safety rules
+│   ├── autopilot.py    Cycle orchestration (AI → trades → journal)
+│   ├── circuit.py      Drawdown circuit breaker (safe mode / hard stop)
+│   └── guardrails.py   Position limits, min cash, trade filters
+├── ai/             Gemini and portfolio memory
+│   ├── ai.py           Prompts, JSON decisions, usage logging
+│   ├── memory.py       Thesis, plan, lessons, skip scars
+│   └── user_guidance.py One-shot instructions for the next cycle
+├── storage/        Local persistence
+│   ├── performance.py  Snapshots, P&L charts, deposits/withdrawals
+│   ├── journal.py      Executed trades log
+│   └── usage.py        Gemini token/cost tracking
+└── web/
+    └── main.py         FastAPI app, routes, templates
+
+main.py             Re-exports `app` from `app.web.main`
+templates/          Jinja2 HTML
+static/             CSS and JS
+data/               Runtime state (see below)
+scripts/            Helpers (e.g. run Demo + Live together)
+```
+
+**Import convention:** modules use absolute imports from the package, e.g. `from app.core import config`, `from app.engine import autopilot`.
+
 ## Data files
 
 State is isolated per environment under `./data/demo/` and `./data/live/`:

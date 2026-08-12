@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import config
+from app.core import config
 
 
 def app_tz() -> ZoneInfo:

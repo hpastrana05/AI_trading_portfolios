@@ -2,17 +2,11 @@ import json
 import threading
 import time
 
-import ai
-import circuit
-import config
-import guardrails
-import journal
-import memory
-import performance
-import t212
-import timeutil
-import usage
-import user_guidance
+from app.ai import ai, memory, user_guidance
+from app.core import config, timeutil
+from app.engine import circuit, guardrails
+from app.storage import journal, performance, usage
+from app.trading import t212
 
 _lock = threading.Lock()
 _thread: threading.Thread | None = None
@@ -101,15 +95,52 @@ def risk_prompt(risk: str) -> str:
     return RISK_PROMPTS.get(risk.lower(), RISK_PROMPTS["medium"])
 
 
-def cycle_pnl_context(account: dict) -> dict:
-    """P&L since the previous AI cycle (portfolio value then → now)."""
+def _day_start_baseline(account: dict, state: dict) -> tuple[float, str | None]:
+    """Portfolio value at the start of today (local app timezone)."""
+    today = timeutil.now().date().isoformat()
+    if (
+        state.get("day_start_date") == today
+        and state.get("day_start_value") is not None
+        and float(state["day_start_value"]) > 0
+    ):
+        return float(state["day_start_value"]), state.get("day_start_at")
+
+    start_value = None
+    start_at = None
+
+    snap = performance.last_snapshot_before_today()
+    if snap and float(snap.get("total_value") or 0) > 0:
+        start_value = float(snap["total_value"])
+        start_at = snap.get("timestamp")
+
+    if start_value is None:
+        prev_at = state.get("last_cycle_at") or state.get("last_run")
+        prev_value = state.get("last_cycle_value")
+        if prev_value is not None and float(prev_value) > 0 and prev_at:
+            prev_dt = timeutil.parse_iso(prev_at)
+            if prev_dt and prev_dt.date().isoformat() < today:
+                start_value = float(prev_value)
+                start_at = prev_at
+
+    if start_value is None:
+        start_value = float(account.get("total_value") or 0)
+        start_at = timeutil.now_iso()
+
+    state["day_start_value"] = start_value
+    state["day_start_date"] = today
+    state["day_start_at"] = start_at
+    save_state(state)
+    return start_value, start_at
+
+
+def daily_pnl_context(account: dict) -> dict:
+    """P&L since local midnight today (portfolio value then → now)."""
     state = load_state()
     now_value = float(account.get("total_value") or 0)
     currency = account.get("currency", "")
-    prev_value = state.get("last_cycle_value")
-    prev_at = state.get("last_cycle_at") or state.get("last_run")
+    prev_value, prev_at = _day_start_baseline(account, state)
 
-    if prev_value is None or float(prev_value) <= 0 or now_value <= 0:
+    if prev_value <= 0 or now_value <= 0:
         return {
             "pnl": None,
             "pnl_pct": None,
@@ -117,27 +148,26 @@ def cycle_pnl_context(account: dict) -> dict:
             "prev_at": prev_at,
             "now_value": now_value,
             "text": (
-                f"No prior cycle baseline yet. Current portfolio value: "
+                f"No daily baseline yet. Current portfolio value: "
                 f"{now_value:.2f} {currency}. "
                 "Actively choose the best allocation for the strategy. "
-                "Goal: maximize quality of the portfolio while avoiding cycle-to-cycle losses."
+                "Goal: maximize portfolio quality and keep today's P&L positive."
             ),
         }
 
-    prev_value = float(prev_value)
     pnl = now_value - prev_value
     pnl_pct = pnl / prev_value * 100
-    when = timeutil.format_local(prev_at) if prev_at else "previous cycle"
+    when = timeutil.format_local(prev_at) if prev_at else "start of today"
     if pnl_pct >= 0:
         guidance = (
-            "Period P&L is positive — do NOT default to hold. "
+            "Daily P&L is positive — do NOT default to hold. "
             "Evaluate the best next allocation given this edge: improve the portfolio if a better setup exists, "
             "or keep current weights only if that is truly the best option after comparing alternatives. "
-            "Avoid changes that are likely to erase the gain and turn this period P&L negative."
+            "Avoid changes that are likely to erase the gain and turn today's P&L negative."
         )
     else:
         guidance = (
-            "Period P&L is negative — seek the best recovery path with controlled risk. "
+            "Daily P&L is negative — seek the best recovery path with controlled risk to turn it positive. "
             "Prefer reallocations that improve expected outcome; avoid revenge trading and avoid deepening losses. "
             "Hold only if staying put is clearly better than available alternatives."
         )
@@ -148,9 +178,9 @@ def cycle_pnl_context(account: dict) -> dict:
         "prev_at": prev_at,
         "now_value": now_value,
         "text": (
-            f"Since last cycle ({when}): portfolio P&L {pnl:+.2f} {currency} "
+            f"Today's P&L (since {when}): {pnl:+.2f} {currency} "
             f"({pnl_pct:+.2f}%). "
-            f"Was {prev_value:.2f} → now {now_value:.2f} {currency}. "
+            f"Day start {prev_value:.2f} → now {now_value:.2f} {currency}. "
             f"{guidance}"
         ),
     }
@@ -462,7 +492,7 @@ def run_cycle(risk: str) -> dict:
     mem = memory.load()
     base_rules = guardrails.load()
     rules = circuit.safe_rules_overlay(base_rules, state)
-    pnl_ctx = cycle_pnl_context(account)
+    pnl_ctx = daily_pnl_context(account)
     protection_ctx = circuit.prompt_text(state, base_rules)
     strategy = (
         f"{config.STRATEGY}\n{risk_prompt(risk)}\n"
@@ -476,7 +506,7 @@ def run_cycle(risk: str) -> dict:
         "Each cycle you may pick ANY suitable symbols; the shortlist used for orders this cycle is temporary — "
         "never treat it as a permanent allow-list or hard guardrail in memory. "
         "Temporary order failures are not bans — those tickers remain eligible. "
-        "Choose the best option for the portfolio; use no_changes=true only when holding is clearly best after comparing alternatives — never as a default just because P&L is green."
+        "Choose the best option for the portfolio; use no_changes=true only when holding is clearly best after comparing alternatives — never as a default just because daily P&L is green."
     )
     skip_ctx = memory.skips_prompt_text(mem)
     if skip_ctx:
@@ -492,7 +522,7 @@ def run_cycle(risk: str) -> dict:
     # One-shot: consume user guidance after a successful AI decision.
     if guidance:
         user_guidance.clear()
-    decision["since_last_cycle"] = {
+    decision["daily_pnl"] = {
         "pnl": pnl_ctx["pnl"],
         "pnl_pct": pnl_ctx["pnl_pct"],
         "prev_value": pnl_ctx["prev_value"],
@@ -502,7 +532,7 @@ def run_cycle(risk: str) -> dict:
     ai.log_decision(decision)
     print(
         f"[autopilot] AI cycle done at {timeutil.now_iso()} risk={risk} "
-        f"since_last_cycle_pnl_pct={pnl_ctx['pnl_pct']}",
+        f"daily_pnl_pct={pnl_ctx['pnl_pct']}",
         flush=True,
     )
 
@@ -628,7 +658,7 @@ def run_cycle(risk: str) -> dict:
 
     summary_notes = list(prot_notes) + prep_notes + guard_notes
     if pnl_ctx.get("pnl_pct") is not None:
-        summary_notes = [f"Since last cycle: {pnl_ctx['pnl_pct']:+.2f}%"] + summary_notes
+        summary_notes = [f"Today: {pnl_ctx['pnl_pct']:+.2f}%"] + summary_notes
     if state.get("protection_mode") == "safe":
         summary_notes = [f"SAFE MODE active (DD {state.get('drawdown_pct')}%)"] + summary_notes
     if skipped:

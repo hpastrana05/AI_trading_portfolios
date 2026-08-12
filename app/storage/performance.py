@@ -3,8 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import config
-import timeutil
+from app.core import config, timeutil
 
 
 def _snapshots_path() -> Path:
@@ -243,7 +242,7 @@ def _align_deposits_to_jumps(capital: dict, snapshots: list[dict]) -> dict:
 def _adjust_protection_peak_for_cashflow(signed_amount: float) -> None:
     """Keep circuit-breaker peak on trading equity (exclude deposits/withdrawals)."""
     try:
-        import autopilot
+        from app.engine import autopilot
 
         state = autopilot.load_state()
         peak = state.get("equity_peak")
@@ -285,6 +284,20 @@ def _net_deposits_at(capital: dict, when: datetime) -> float:
 def _last_snapshot() -> dict | None:
     rows = _read_snapshots()
     return rows[-1] if rows else None
+
+
+def last_snapshot_before_today() -> dict | None:
+    """Most recent investable snapshot strictly before local midnight today."""
+    today_start = timeutil.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    best = None
+    for row in _read_snapshots():
+        try:
+            ts = _parse_ts(row["timestamp"])
+        except (TypeError, ValueError):
+            continue
+        if ts < today_start:
+            best = row
+    return best
 
 
 def record_snapshot(account: dict) -> None:
@@ -542,7 +555,7 @@ def reset_demo_local_data() -> dict:
         raise RuntimeError("Reset is only available in DEMO")
 
     try:
-        import autopilot
+        from app.engine import autopilot
 
         autopilot.stop()
     except Exception:

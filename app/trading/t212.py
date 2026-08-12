@@ -2,8 +2,8 @@ import json
 import time
 from pathlib import Path
 
-import config
-from trading_api import accounts, instruments, orders, positions
+from app.core import config
+from app.trading.api import accounts, instruments, orders, positions
 
 
 def get_account() -> dict:

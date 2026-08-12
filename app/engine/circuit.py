@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import guardrails
-import timeutil
+from app.core import timeutil
+from app.engine import guardrails
 
 
 def current_drawdown_pct(equity: float, peak: float | None) -> float:
@@ -27,7 +27,7 @@ def update_peak(state: dict, equity: float) -> dict:
 def trading_equity(raw_equity: float) -> float:
     """Equity excluding registered net deposits/withdrawals (avoids deposit spikes)."""
     try:
-        import performance
+        from app.storage import performance
 
         capital = performance.load_capital()
         net = float(capital.get("net_deposits") or 0)

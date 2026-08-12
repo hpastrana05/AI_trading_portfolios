@@ -2,7 +2,7 @@ import time
 
 import requests
 
-import config
+from app.core import config
 
 
 def make_request(method, endpoint, params=None, payload=None, max_retries: int = 3):

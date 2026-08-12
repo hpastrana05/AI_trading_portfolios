@@ -1,8 +1,7 @@
 import json
 from pathlib import Path
 
-import config
-import timeutil
+from app.core import config, timeutil
 
 DEFAULT_GUARDRAILS = {
     "max_position_pct": None,  # percent 0-100, None = AI decides

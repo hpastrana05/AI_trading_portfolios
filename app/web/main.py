@@ -1,24 +1,18 @@
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-import autopilot
-import config
-import guardrails
-import journal
-import memory
-import performance
-import t212
-import timeutil
-import usage
-import user_guidance
+from app.ai import memory, user_guidance
+from app.core import config, timeutil
+from app.engine import autopilot, guardrails
+from app.storage import journal, performance, usage
+from app.trading import t212
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = config.BASE_DIR
 
 _ACCOUNT_CACHE: dict[str, object] = {"ts": 0.0, "data": None}
 _POSITIONS_CACHE: dict[str, object] = {"ts": 0.0, "data": None}

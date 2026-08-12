@@ -1,8 +1,7 @@
 import json
 from pathlib import Path
 
-import config
-import timeutil
+from app.core import config, timeutil
 
 
 def _path() -> Path:

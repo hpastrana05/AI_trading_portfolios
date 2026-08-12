@@ -1,7 +1,6 @@
 import json
 
-import config
-import timeutil
+from app.core import config, timeutil
 
 
 def _trades_path():
