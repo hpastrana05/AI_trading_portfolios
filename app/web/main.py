@@ -1,8 +1,10 @@
+import json
 import time
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -159,8 +161,22 @@ def history(request: Request):
     )
 
 
+def _memory_error_redirect(message: str) -> RedirectResponse:
+    return RedirectResponse(
+        url=f"/memory?error={quote(str(message)[:240], safe='')}",
+        status_code=303,
+    )
+
+
 @app.get("/memory", response_class=HTMLResponse)
-def memory_page(request: Request, cleared: int = 0, tracking: str | None = None):
+def memory_page(
+    request: Request,
+    cleared: int = 0,
+    tracking: str | None = None,
+    copied: int = 0,
+    imported: int = 0,
+    error: str | None = None,
+):
     return templates.TemplateResponse(
         request,
         "memory.html",
@@ -168,8 +184,12 @@ def memory_page(request: Request, cleared: int = 0, tracking: str | None = None)
             "active": "memory",
             "memory": memory.load(),
             "env": config.T212_ENV,
+            "can_copy_demo": config.T212_ENV != "DEMO",
             "cleared": bool(cleared),
             "tracking_saved": tracking,
+            "copied": bool(copied),
+            "imported": bool(imported),
+            "error": error,
         },
     )
 
@@ -188,6 +208,53 @@ def memory_skip_tracking(enabled: str = Form("0")):
         url=f"/memory?tracking={'on' if on else 'off'}",
         status_code=303,
     )
+
+
+@app.post("/memory/copy-from-demo")
+def memory_copy_from_demo():
+    if config.T212_ENV == "DEMO":
+        return _memory_error_redirect("Already on DEMO — open LIVE to copy from DEMO.")
+    try:
+        memory.copy_from_env("DEMO")
+    except FileNotFoundError:
+        return _memory_error_redirect("No DEMO memory file found yet.")
+    except ValueError as exc:
+        return _memory_error_redirect(str(exc))
+    return RedirectResponse(url="/memory?copied=1", status_code=303)
+
+
+@app.get("/memory/export")
+def memory_export():
+    payload = memory.export_payload()
+    stamp = timeutil.now().strftime("%Y%m%d-%H%M")
+    filename = f"thinking-{config.T212_ENV.lower()}-{stamp}.json"
+    body = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+_MAX_THINKING_IMPORT_BYTES = 512_000
+
+
+@app.post("/memory/import")
+async def memory_import(file: UploadFile = File(...)):
+    raw = await file.read()
+    if not raw:
+        return _memory_error_redirect("The uploaded file was empty.")
+    if len(raw) > _MAX_THINKING_IMPORT_BYTES:
+        return _memory_error_redirect("Thinking file is too large.")
+    try:
+        payload = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return _memory_error_redirect("Not valid JSON. Export thinking and upload that file.")
+    try:
+        memory.import_payload(payload)
+    except ValueError as exc:
+        return _memory_error_redirect(str(exc))
+    return RedirectResponse(url="/memory?imported=1", status_code=303)
 
 
 @app.get("/performance", response_class=HTMLResponse)

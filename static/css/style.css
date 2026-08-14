@@ -448,6 +448,42 @@ button:disabled {
   background: #dc2626;
 }
 
+a.btn-primary,
+a.btn-secondary,
+label.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 0.6rem 1.15rem;
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  cursor: pointer;
+  margin: 0;
+}
+
+a.btn-secondary,
+label.btn-secondary {
+  color: var(--text);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+}
+
+a.btn-secondary:hover,
+label.btn-secondary:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+a.btn-primary {
+  color: #fff;
+}
+
 /* Status info */
 .status-info {
   margin-top: 1rem;
@@ -823,6 +859,76 @@ tbody tr:last-child td {
   opacity: 0.5;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.transfer-card {
+  margin-bottom: 1.25rem;
+}
+
+.transfer-header h2 {
+  margin-bottom: 0.35rem;
+}
+
+.transfer-header .meta {
+  margin: 0;
+  max-width: 44rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.transfer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 1.1rem;
+  padding-top: 1.05rem;
+  border-top: 1px solid var(--border);
+}
+
+.transfer-import {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-left: auto;
+  padding-left: 0.9rem;
+  border-left: 1px solid var(--border);
+}
+
+.transfer-filename {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-filename.has-file {
+  color: var(--text);
+}
+
+.transfer-import button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.transfer-hint {
+  margin-top: 0.9rem;
+  color: var(--text-muted);
+}
+
 /* Memory page */
 .memory-grid {
   display: grid;
@@ -939,5 +1045,12 @@ pre {
 
   .stat-value {
     font-size: 1.35rem;
+  }
+
+  .transfer-import {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+    width: 100%;
   }
 }

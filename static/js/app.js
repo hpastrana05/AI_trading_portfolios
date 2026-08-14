@@ -78,6 +78,23 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   window.addEventListener("scroll", () => closeAllWhy(), true);
   window.addEventListener("resize", () => closeAllWhy());
+
+  const thinkingFile = document.getElementById("thinking-import-file");
+  const thinkingName = document.getElementById("thinking-import-name");
+  const thinkingBtn = document.getElementById("thinking-import-btn");
+  if (thinkingFile && thinkingName) {
+    thinkingFile.addEventListener("change", () => {
+      const file = thinkingFile.files && thinkingFile.files[0];
+      thinkingName.textContent = file ? file.name : "No file chosen";
+      thinkingName.classList.toggle("has-file", Boolean(file));
+      if (thinkingBtn) {
+        thinkingBtn.disabled = !file;
+        thinkingBtn.classList.toggle("btn-primary", Boolean(file));
+        thinkingBtn.classList.toggle("btn-secondary", !file);
+      }
+    });
+  }
+
   const canvas = document.getElementById("performance-chart");
   if (!canvas) {
     return;

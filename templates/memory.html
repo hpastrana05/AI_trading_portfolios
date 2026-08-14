@@ -33,6 +33,50 @@
     Skip tracking enabled. Temporary order failures will be remembered for the next cycles.
   </div>
   {% endif %}
+  {% if copied %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
+    Copied DEMO thesis, plan, notes, lessons and thinking log. Skip scars were left untouched.
+    The next LIVE cycle will use this thinking against current LIVE holdings.
+  </div>
+  {% endif %}
+  {% if imported %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
+    Imported thinking. Thesis, plan, notes, lessons and thinking log were replaced.
+    Skip scars were not imported.
+  </div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-error"><strong>Could not update thinking.</strong> {{ error }}</div>
+  {% endif %}
+
+  <div class="card transfer-card">
+    <div class="transfer-header">
+      <h2>Transfer thinking</h2>
+      <p class="meta">
+        Moves how Gemini manages the portfolio (thesis, plan, notes, lessons, thinking log).
+        Does not copy holdings, trades, skip scars, or place orders.
+      </p>
+    </div>
+    <div class="transfer-toolbar">
+      {% if can_copy_demo %}
+      <form method="post" action="/memory/copy-from-demo"
+            onsubmit="return confirm('Replace LIVE thesis, plan, notes, lessons and thinking log with DEMO? Skip scars stay. This does not copy holdings or place trades.');">
+        <button type="submit" class="btn-primary">Copy from DEMO</button>
+      </form>
+      {% endif %}
+      <a href="/memory/export" class="btn-secondary">Export thinking</a>
+      <form method="post" action="/memory/import" enctype="multipart/form-data" class="transfer-import"
+            onsubmit="return confirm('Replace this environment thesis, plan, notes, lessons and thinking log with the uploaded export? Skip scars are not imported.');">
+        <input id="thinking-import-file" class="visually-hidden" type="file" name="file" accept="application/json,.json" required>
+        <label for="thinking-import-file" class="btn-secondary">Choose JSON file</label>
+        <span class="transfer-filename" id="thinking-import-name">No file chosen</span>
+        <button type="submit" class="btn-secondary" id="thinking-import-btn" disabled>Import</button>
+      </form>
+    </div>
+    {% if not can_copy_demo %}
+    <p class="meta transfer-hint">To apply this on LIVE, export here and import there — or open LIVE and use Copy from DEMO.</p>
+    {% endif %}
+  </div>
 
   <div class="card" style="margin-bottom:1.25rem">
     <div class="demo-reset-box" style="margin:0;padding:0;border:0">
