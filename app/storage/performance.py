@@ -20,9 +20,13 @@ def _default_baseline() -> float:
     return 0.0
 
 
-def _demo_start_dt() -> datetime:
+def _demo_start_dt(capital: dict | None = None) -> datetime:
     """DEMO portfolio origin day (local app timezone, start of day)."""
-    raw = (getattr(config, "DEMO_START_DATE", None) or "2026-07-30").strip()
+    raw = ""
+    if capital and capital.get("start_date"):
+        raw = str(capital.get("start_date") or "").strip()
+    if not raw:
+        raw = (getattr(config, "DEMO_START_DATE", None) or "2026-07-30").strip()
     try:
         day = datetime.strptime(raw[:10], "%Y-%m-%d").date()
     except ValueError:
@@ -32,8 +36,16 @@ def _demo_start_dt() -> datetime:
     )
 
 
-def _demo_start_iso() -> str:
-    return _demo_start_dt().isoformat()
+def _demo_start_iso(capital: dict | None = None) -> str:
+    return _demo_start_dt(capital).isoformat()
+
+
+def _capital_start_date(raw: dict | None = None) -> str | None:
+    if raw and raw.get("start_date"):
+        return str(raw["start_date"])[:10]
+    if config.T212_ENV == "DEMO":
+        return str(config.DEMO_START_DATE)[:10]
+    return None
 
 
 def _sum_deposit_amounts(capital: dict) -> float:
@@ -53,6 +65,7 @@ def load_capital() -> dict:
         "net_deposits": 0.0,
         "deposits": [],
         "updated_at": None,
+        "start_date": _capital_start_date(),
     }
     if path.exists():
         try:
@@ -61,6 +74,7 @@ def load_capital() -> dict:
                 data["baseline"] = float(raw["baseline"])
             data["deposits"] = list(raw.get("deposits") or [])
             data["updated_at"] = raw.get("updated_at")
+            data["start_date"] = _capital_start_date(raw)
         except (json.JSONDecodeError, OSError, TypeError, ValueError):
             pass
     if data["baseline"] is None and config.T212_ENV == "DEMO":
@@ -84,6 +98,7 @@ def save_capital(data: dict) -> dict:
         "net_deposits": net,
         "deposits": deposits,
         "updated_at": timeutil.now_iso(),
+        "start_date": data.get("start_date") or _capital_start_date(),
     }
     _capital_path().write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
@@ -416,7 +431,7 @@ def build_performance(range_key: str = "max") -> dict:
     points_src = list(snapshots)
     if config.T212_ENV == "DEMO" and capital.get("baseline"):
         baseline = float(capital["baseline"])
-        seed_ts = _demo_start_iso()
+        seed_ts = _demo_start_iso(capital)
         has_seed = bool(
             points_src
             and abs(float(points_src[0]["total_value"]) - baseline) < 0.01
@@ -462,7 +477,9 @@ def build_performance(range_key: str = "max") -> dict:
                 "net_deposits": _sum_deposit_amounts(capital),
                 "net_invested": float(capital.get("baseline") or 0)
                 + _sum_deposit_amounts(capital),
-                "start_date": config.DEMO_START_DATE if config.T212_ENV == "DEMO" else None,
+                "start_date": capital.get("start_date")
+                if config.T212_ENV == "DEMO"
+                else None,
             },
             "metrics": {
                 "total_pnl": 0.0,
@@ -538,7 +555,9 @@ def build_performance(range_key: str = "max") -> dict:
             "baseline": capital.get("baseline"),
             "net_deposits": net_deposits,
             "net_invested": net_invested_now,
-            "start_date": config.DEMO_START_DATE if config.T212_ENV == "DEMO" else None,
+            "start_date": capital.get("start_date")
+            if config.T212_ENV == "DEMO"
+            else None,
         },
         "metrics": {
             "total_pnl": total_pnl,
@@ -549,11 +568,8 @@ def build_performance(range_key: str = "max") -> dict:
     }
 
 
-def reset_demo_local_data() -> dict:
-    """Wipe DEMO-only local state after a Trading212 practice account reset."""
-    if config.T212_ENV != "DEMO":
-        raise RuntimeError("Reset is only available in DEMO")
-
+def reset_local_data(baseline: float | None = None) -> dict:
+    """Wipe local AI memory, trades, and performance for the current environment."""
     try:
         from app.engine import autopilot
 
@@ -561,7 +577,7 @@ def reset_demo_local_data() -> dict:
     except Exception:
         pass
 
-    folder = config.env_data_dir("DEMO")
+    folder = config.env_data_dir()
     removed = []
     names = [
         "portfolio_snapshots.jsonl",
@@ -573,7 +589,6 @@ def reset_demo_local_data() -> dict:
         "decisions.jsonl",
         "autopilot_state.json",
         "user_guidance.json",
-        "instruments_cache.json",
     ]
     for name in names:
         path = folder / name
@@ -581,12 +596,28 @@ def reset_demo_local_data() -> dict:
             path.unlink()
             removed.append(name)
 
-    # Restore fresh DEMO baseline.
-    save_capital(
+    if baseline is None or float(baseline) <= 0:
+        baseline = _default_baseline() if config.T212_ENV == "DEMO" else None
+    else:
+        baseline = float(baseline)
+
+    saved = save_capital(
         {
-            "baseline": _default_baseline(),
+            "baseline": baseline,
             "net_deposits": 0.0,
             "deposits": [],
+            "start_date": timeutil.now().date().isoformat(),
         }
     )
-    return {"removed": removed, "baseline": _default_baseline()}
+    return {
+        "removed": removed,
+        "baseline": saved.get("baseline"),
+        "start_date": saved.get("start_date"),
+    }
+
+
+def reset_demo_local_data() -> dict:
+    """Back-compat wrapper for DEMO-only local wipes."""
+    if config.T212_ENV != "DEMO":
+        raise RuntimeError("Reset is only available in DEMO")
+    return reset_local_data(baseline=_default_baseline())

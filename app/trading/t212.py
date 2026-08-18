@@ -89,6 +89,37 @@ def place_market_order(ticker: str, quantity: float) -> dict:
     return {"id": order.get("id"), "status": order.get("status", "unknown")}
 
 
+def cancel_all_pending_orders() -> list[dict]:
+    """Cancel active equity orders so a reset is not fighting leftover buys/sells."""
+    raw = orders.get_pending_orders()
+    if raw is None:
+        items: list = []
+    elif isinstance(raw, list):
+        items = raw
+    elif isinstance(raw, dict):
+        nested = raw.get("items") or raw.get("orders") or raw.get("data") or []
+        items = nested if isinstance(nested, list) else []
+    else:
+        items = []
+
+    results = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        oid = item.get("id")
+        if oid is None:
+            continue
+        entry = {"id": oid, "ticker": item.get("ticker"), "ok": True}
+        try:
+            orders.delete_cancel_pending_order(int(oid))
+        except Exception as exc:
+            entry["ok"] = False
+            entry["error"] = str(exc)
+        results.append(entry)
+        time.sleep(0.25)
+    return results
+
+
 def _normalize_instrument(raw: dict) -> dict:
     ticker = raw.get("ticker", "")
     short = ticker.split("_")[0] if ticker else ""

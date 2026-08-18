@@ -24,8 +24,13 @@ def make_request(method, endpoint, params=None, payload=None, max_retries: int =
         )
         last_response = response
 
-        if response.status_code == 200:
-            return response.json()
+        if response.status_code in (200, 204):
+            if not response.content:
+                return {}
+            try:
+                return response.json()
+            except ValueError:
+                return {}
 
         if response.status_code == 429:
             retry_after = response.headers.get("Retry-After")

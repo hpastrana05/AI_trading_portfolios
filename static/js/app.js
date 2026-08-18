@@ -31,6 +31,34 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  document.querySelectorAll("form.reset-form").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      const env = form.dataset.env || "this account";
+      const marketOpen = form.dataset.marketOpen === "1";
+      if (!marketOpen) {
+        const still = window.confirm(
+          "Markets look closed. Reset may fail to sell positions and still erase AI memory. Continue anyway?"
+        );
+        if (!still) {
+          event.preventDefault();
+          return;
+        }
+      }
+      const ok = window.confirm(
+        `Are you sure? This will SELL ALL tradeable stocks/ETFs on ${env} and erase AI memory, trade history, and performance. Pies are not sold. This cannot be undone.`
+      );
+      if (!ok) {
+        event.preventDefault();
+        return;
+      }
+      const button = form.querySelector("button[type='submit']");
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Resetting…";
+      }
+    });
+  });
+
   // Floating Why? popovers on History — no table layout shift.
   const whyPopovers = Array.from(document.querySelectorAll(".why-popover"));
   function closeAllWhy(except = null) {

@@ -853,3 +853,92 @@ def run_once(risk: str | None = None) -> dict:
     except Exception as exc:
         _save_run_result(None, exc)
         return {"error": str(exc), "executed": [], "skipped": []}
+
+
+_LIQUIDATE_PAUSE_S = 1.25
+
+
+def liquidate_all_positions() -> dict:
+    """Market-sell every tradeable (non-pie) position. Does not touch pies."""
+    cancelled: list[dict] = []
+    try:
+        cancelled = t212.cancel_all_pending_orders()
+    except Exception as exc:
+        cancelled = [{"ok": False, "error": str(exc)}]
+
+    _account, positions = t212.portfolio_view()
+    executed = []
+    skipped = []
+    sellable = [p for p in positions if float(p.get("quantity") or 0) > 1e-9]
+    for i, pos in enumerate(sellable):
+        ticker = pos["ticker"]
+        qty = float(pos["quantity"])
+        price = float(pos.get("current_price") or 0)
+        sell_qty = -round(qty, 8)
+        try:
+            result = t212.place_market_order(ticker, sell_qty)
+        except Exception as exc:
+            skipped.append({"ticker": ticker, "reason": str(exc)})
+            continue
+        executed.append(
+            {
+                "ticker": ticker,
+                "action": "sell",
+                "quantity": sell_qty,
+                "price": price,
+                "amount": sell_qty * price,
+                "order_id": result.get("id"),
+                "status": result.get("status"),
+            }
+        )
+        if i + 1 < len(sellable):
+            time.sleep(_LIQUIDATE_PAUSE_S)
+
+    return {
+        "executed": executed,
+        "skipped": skipped,
+        "cancelled": cancelled,
+        "positions_before": positions,
+    }
+
+
+def reset_portfolio() -> dict:
+    """Stop autopilot, sell all tradeable holdings, and erase local AI state."""
+    with _lock:
+        try:
+            stop()
+        except Exception:
+            pass
+
+    sell = {
+        "executed": [],
+        "skipped": [],
+        "cancelled": [],
+        "error": None,
+    }
+    try:
+        liquidated = liquidate_all_positions()
+        sell["executed"] = liquidated.get("executed") or []
+        sell["skipped"] = liquidated.get("skipped") or []
+        sell["cancelled"] = liquidated.get("cancelled") or []
+    except Exception as exc:
+        sell["error"] = str(exc)
+
+    remaining = None
+    account = None
+    try:
+        account, _positions = t212.portfolio_view()
+        remaining = float(account.get("total_value") or 0)
+    except Exception:
+        pass
+
+    wiped = performance.reset_local_data(
+        baseline=remaining if remaining and remaining > 0 else None
+    )
+    if account and remaining and remaining > 0:
+        try:
+            performance.record_snapshot(account)
+        except Exception:
+            pass
+
+    return {**sell, "wiped": wiped, "account": account}

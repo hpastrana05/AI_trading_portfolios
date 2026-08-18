@@ -26,6 +26,16 @@
   {% if error %}
   <div class="alert alert-error"><strong>Could not save.</strong> {{ error }}</div>
   {% endif %}
+  {% if reset_done %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
+    Reset complete for {{ env }}. Sold {{ reset_sold }} position{{ 's' if reset_sold != 1 else '' }}
+    {% if reset_skipped %}, {{ reset_skipped }} sell{{ 's' if reset_skipped != 1 else '' }} skipped{% endif %}.
+    AI memory, trades, and performance history were erased.
+  </div>
+  {% endif %}
+  {% if reset_error %}
+  <div class="alert alert-error"><strong>Reset sell error.</strong> {{ reset_error }} Local memory was still erased.</div>
+  {% endif %}
 
   <div class="card">
     <h2>Hard limits for {{ env }}</h2>
@@ -106,5 +116,25 @@
         {% endif %}
       </div>
     </form>
+  </div>
+
+  <div class="card" style="margin-top:1.25rem">
+    <h2>Reset {{ env }}</h2>
+    <div class="demo-reset-box" style="margin-top:0;padding-top:0;border-top:0">
+      <div>
+        <p class="meta" style="margin:0">
+          Stops the autopilot, sells every tradeable stock/ETF (pies are left alone),
+          and erases AI memory, trade history, and performance for this instance.
+          Guardrails and Gemini usage stay. This cannot be undone.
+        </p>
+        {% if market.warning %}
+        <p class="reset-market-warning">{{ market.warning }} You can still continue, but it may not work well.</p>
+        {% endif %}
+      </div>
+      <form method="post" action="/reset" class="reset-form" data-env="{{ env }}" data-market-open="{{ '1' if market.open else '0' }}">
+        <input type="hidden" name="next" value="/settings">
+        <button type="submit" class="btn-danger">Reset</button>
+      </form>
+    </div>
   </div>
 {% endblock %}

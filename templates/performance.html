@@ -10,7 +10,7 @@
       <span class="badge">Equity curve</span>
       <span class="badge">Excl. pies</span>
       <span class="badge">Data: {{ env | lower }} only</span>
-      {% if can_reset %}
+      {% if env == 'DEMO' %}
       <span class="badge">Baseline {{ "%.0f"|format(demo_baseline) }} €</span>
       <span class="badge">Since {{ demo_start_date }}</span>
       {% else %}
@@ -19,11 +19,6 @@
     </div>
   </header>
 
-  {% if reset_done %}
-  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
-    Demo local data reset. Performance baseline is {{ "%.0f"|format(demo_baseline) }} € again.
-  </div>
-  {% endif %}
   {% if deposit_saved %}
   <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
     Deposit registered. It will not count as trading P&amp;L.
@@ -83,21 +78,6 @@
       <canvas id="performance-chart" height="110"></canvas>
     </div>
     <div class="meta" id="performance-empty" style="display:none;">Not enough data yet. Run the autopilot or open dashboard to collect snapshots.</div>
-
-    {% if can_reset %}
-    <div class="demo-reset-box">
-      <div>
-        <strong>Reset DEMO data</strong>
-        <p class="meta" style="margin:0.35rem 0 0">
-          Clears local history, trades, memory, guidance and performance for this Demo instance
-          (after you reset the practice account in Trading212). Does not touch Live.
-        </p>
-      </div>
-      <form method="post" action="/performance/reset" onsubmit="return confirm('Reset all DEMO local data? This cannot be undone.');">
-        <button type="submit" class="btn-danger">Reset DEMO</button>
-      </form>
-    </div>
-    {% endif %}
 
     {% if can_deposit %}
     <div class="demo-reset-box">

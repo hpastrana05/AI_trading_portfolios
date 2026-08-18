@@ -702,6 +702,13 @@ a.btn-primary {
   gap: 1rem;
 }
 
+.reset-market-warning {
+  margin: 0.6rem 0 0;
+  color: #fbbf24;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
 @media (max-width: 640px) {
   .guidance-header {
     flex-direction: column;

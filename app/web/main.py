@@ -64,6 +64,10 @@ templates.env.globals["other_env_port"] = config.OTHER_ENV_PORT
 templates.env.globals["other_env"] = config.OTHER_ENV
 
 
+def _market_status() -> dict:
+    return timeutil.equity_market_status()
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     error = None
@@ -150,6 +154,26 @@ def run_once_endpoint(risk: str = Form(None)):
     except Exception:
         pass
     return RedirectResponse(url="/", status_code=303)
+
+
+def _reset_redirect(next_url: str, result: dict) -> RedirectResponse:
+    dest = next_url if next_url in ("/settings", "/", "/performance") else "/settings"
+    sold = len(result.get("executed") or [])
+    skipped = len(result.get("skipped") or [])
+    params = f"reset=1&sold={sold}&skipped={skipped}"
+    err = result.get("error")
+    if err:
+        params += f"&reset_error={quote(str(err)[:240], safe='')}"
+    sep = "&" if "?" in dest else "?"
+    return RedirectResponse(url=f"{dest}{sep}{params}", status_code=303)
+
+
+@app.post("/reset")
+def reset_portfolio_endpoint(next: str = Form("/settings")):
+    result = autopilot.reset_portfolio()
+    _ACCOUNT_CACHE["data"] = None
+    _POSITIONS_CACHE["data"] = None
+    return _reset_redirect(next, result)
 
 
 @app.get("/history", response_class=HTMLResponse)
@@ -260,11 +284,11 @@ async def memory_import(file: UploadFile = File(...)):
 @app.get("/performance", response_class=HTMLResponse)
 def performance_page(
     request: Request,
-    reset: int = 0,
     deposit_saved: int = 0,
     withdrawal_saved: int = 0,
     sell_done: int = 0,
 ):
+    capital = performance.load_capital()
     try:
         account = _get_account_cached()
         performance.record_snapshot(account)
@@ -276,11 +300,11 @@ def performance_page(
         {
             "active": "performance",
             "env": config.T212_ENV,
-            "can_reset": config.T212_ENV == "DEMO",
             "can_deposit": config.T212_ENV == "LIVE",
-            "demo_baseline": config.DEMO_BASELINE,
-            "demo_start_date": config.DEMO_START_DATE,
-            "reset_done": bool(reset),
+            "demo_baseline": capital.get("baseline")
+            if config.T212_ENV == "DEMO"
+            else config.DEMO_BASELINE,
+            "demo_start_date": capital.get("start_date") or config.DEMO_START_DATE,
             "deposit_saved": bool(deposit_saved),
             "withdrawal_saved": bool(withdrawal_saved),
             "sell_done": bool(sell_done),
@@ -298,17 +322,10 @@ def performance_api(range: str = "max"):
 
 @app.post("/performance/reset")
 def performance_reset():
-    if config.T212_ENV != "DEMO":
-        return RedirectResponse(url="/performance", status_code=303)
-    try:
-        autopilot.stop()
-    except Exception:
-        pass
-    performance.reset_demo_local_data()
-    # Force portfolio cache refresh after wipe.
+    result = autopilot.reset_portfolio()
     _ACCOUNT_CACHE["data"] = None
     _POSITIONS_CACHE["data"] = None
-    return RedirectResponse(url="/performance?reset=1", status_code=303)
+    return _reset_redirect("/settings", result)
 
 
 @app.post("/performance/deposit")
@@ -342,11 +359,9 @@ def performance_sell_for_withdrawal(request: Request, amount: str = Form("")):
         ctx = {
             "active": "performance",
             "env": config.T212_ENV,
-            "can_reset": False,
             "can_deposit": True,
             "demo_baseline": config.DEMO_BASELINE,
             "demo_start_date": config.DEMO_START_DATE,
-            "reset_done": False,
             "deposit_saved": False,
             "withdrawal_saved": False,
             "sell_done": False,
@@ -375,6 +390,10 @@ def settings_page(
     guidance_saved: int = 0,
     guidance_cleared: int = 0,
     error: str | None = None,
+    reset: int = 0,
+    sold: int = 0,
+    skipped: int = 0,
+    reset_error: str | None = None,
 ):
     return templates.TemplateResponse(
         request,
@@ -388,6 +407,11 @@ def settings_page(
             "guidance_saved": bool(guidance_saved),
             "guidance_cleared": bool(guidance_cleared),
             "error": error,
+            "market": _market_status(),
+            "reset_done": bool(reset),
+            "reset_sold": int(sold or 0),
+            "reset_skipped": int(skipped or 0),
+            "reset_error": reset_error,
         },
     )
 
@@ -437,6 +461,11 @@ def settings_save(
                 "guidance_saved": False,
                 "guidance_cleared": False,
                 "error": str(exc),
+                "market": _market_status(),
+                "reset_done": False,
+                "reset_sold": 0,
+                "reset_skipped": 0,
+                "reset_error": None,
             },
             status_code=400,
         )

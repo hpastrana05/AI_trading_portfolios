@@ -77,6 +77,63 @@ def is_weekend(moment: datetime | None = None) -> bool:
     return moment.weekday() >= 5  # Saturday=5, Sunday=6
 
 
+def _minutes_of_day(moment: datetime) -> int:
+    return moment.hour * 60 + moment.minute
+
+
+def _in_local_window(
+    moment: datetime,
+    tz_name: str,
+    start: tuple[int, int],
+    end: tuple[int, int],
+) -> bool:
+    local = moment.astimezone(ZoneInfo(tz_name))
+    if local.weekday() >= 5:
+        return False
+    minutes = _minutes_of_day(local)
+    start_m = start[0] * 60 + start[1]
+    end_m = end[0] * 60 + end[1]
+    return start_m <= minutes < end_m
+
+
+def equity_market_status(moment: datetime | None = None) -> dict:
+    """Rough equity session check for mixed US/EU Trading212 books.
+
+    Open if a weekday falls in US extended hours (04:00–20:00 ET, matching
+    market orders with extendedHours) or Europe regular hours (09:00–17:30
+    Berlin). Holidays are not detected.
+    """
+    moment = moment or now()
+    us_extended = _in_local_window(
+        moment, "America/New_York", (4, 0), (20, 0)
+    )
+    eu_regular = _in_local_window(
+        moment, "Europe/Berlin", (9, 0), (17, 30)
+    )
+    ny_weekend = moment.astimezone(ZoneInfo("America/New_York")).weekday() >= 5
+    eu_weekend = moment.astimezone(ZoneInfo("Europe/Berlin")).weekday() >= 5
+    weekend = ny_weekend and eu_weekend
+    open_now = us_extended or eu_regular
+    warning = None
+    if weekend:
+        warning = (
+            "Markets are closed for the weekend. Reset may fail to sell positions "
+            "and could still erase AI memory."
+        )
+    elif not open_now:
+        warning = (
+            "Equity markets look closed (US extended 04:00–20:00 ET, Europe "
+            "09:00–17:30). Reset may fail to sell some or all positions."
+        )
+    return {
+        "open": open_now,
+        "weekend": weekend,
+        "us_extended": us_extended,
+        "eu_regular": eu_regular,
+        "warning": warning,
+    }
+
+
 def next_trading_aligned(moment: datetime | None = None, interval_minutes: int | None = None) -> datetime:
     """Next aligned slot that falls on a weekday."""
     t = next_aligned(moment, interval_minutes)
