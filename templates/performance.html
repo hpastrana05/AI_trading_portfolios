@@ -19,6 +19,12 @@
     </div>
   </header>
 
+  {% if perf_reset_done %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
+    Performance history reset. Chart and deposits start from the current portfolio value.
+    Holdings, trades and AI memory were not changed.
+  </div>
+  {% endif %}
   {% if liquidate_done %}
   <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
     Sold all tradeable positions: {{ liquidate_sold }} executed
@@ -183,6 +189,20 @@
       </div>
       <form method="post" action="/performance/sell-all" class="sell-all-form" data-env="{{ env }}" data-market-open="{{ '1' if market.open else '0' }}">
         <button type="submit" class="btn-danger">Sell all</button>
+      </form>
+    </div>
+
+    <div class="demo-reset-box">
+      <div>
+        <strong>Reset performance</strong>
+        <p class="meta" style="margin:0.35rem 0 0">
+          Clears the equity curve, P&amp;L and registered deposits/withdrawals for {{ env }}.
+          Sets a new baseline from the current portfolio value. Does not sell holdings or erase AI memory.
+        </p>
+      </div>
+      <form method="post" action="/performance/reset"
+            onsubmit="return confirm('Are you sure? This will erase the performance chart and deposits for this environment. Holdings, trades and AI memory stay.');">
+        <button type="submit" class="btn-danger">Reset performance</button>
       </form>
     </div>
 

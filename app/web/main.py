@@ -297,6 +297,7 @@ def performance_page(
     sell_done: int = 0,
     liquidate_done: int = 0,
     liquidate_error: str | None = None,
+    perf_reset: int = 0,
 ):
     capital = performance.load_capital()
     try:
@@ -326,6 +327,7 @@ def performance_page(
             "liquidate_error": liquidate_error,
             "liquidate_sold": 0,
             "liquidate_skipped": 0,
+            "perf_reset_done": bool(perf_reset),
         },
     )
 
@@ -338,10 +340,24 @@ def performance_api(range: str = "max"):
 
 @app.post("/performance/reset")
 def performance_reset():
-    result = autopilot.reset_portfolio()
+    remaining = None
+    account = None
+    try:
+        account = _get_account_cached()
+        remaining = float(account.get("total_value") or 0)
+    except Exception:
+        pass
+    performance.reset_performance_history(
+        baseline=remaining if remaining and remaining > 0 else None
+    )
+    if account and remaining and remaining > 0:
+        try:
+            performance.record_snapshot(account)
+        except Exception:
+            pass
     _ACCOUNT_CACHE["data"] = None
     _POSITIONS_CACHE["data"] = None
-    return _reset_redirect("/settings", result)
+    return RedirectResponse(url="/performance?perf_reset=1", status_code=303)
 
 
 @app.post("/performance/deposit")
@@ -389,6 +405,7 @@ def performance_sell_for_withdrawal(request: Request, amount: str = Form("")):
             "liquidate_error": None,
             "liquidate_sold": 0,
             "liquidate_skipped": 0,
+            "perf_reset_done": False,
         }
         ctx.update(extra)
         return templates.TemplateResponse(
@@ -429,6 +446,7 @@ def performance_sell_all(request: Request):
             "liquidate_error": None,
             "liquidate_sold": 0,
             "liquidate_skipped": 0,
+            "perf_reset_done": False,
         }
         ctx.update(extra)
         return templates.TemplateResponse(

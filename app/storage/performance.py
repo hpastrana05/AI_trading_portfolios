@@ -616,6 +616,42 @@ def reset_local_data(baseline: float | None = None) -> dict:
     }
 
 
+def reset_performance_history(baseline: float | None = None) -> dict:
+    """Wipe snapshots, deposits and baseline. Does not sell or touch AI memory."""
+    folder = config.env_data_dir()
+    removed = []
+    names = [
+        "portfolio_snapshots.jsonl",
+        "portfolio_snapshots_full_account.jsonl",
+        "performance_capital.json",
+        ".snapshots_investable",
+    ]
+    for name in names:
+        path = folder / name
+        if path.exists():
+            path.unlink()
+            removed.append(name)
+
+    if baseline is None or float(baseline) <= 0:
+        baseline = _default_baseline() if config.T212_ENV == "DEMO" else None
+    else:
+        baseline = float(baseline)
+
+    saved = save_capital(
+        {
+            "baseline": baseline,
+            "net_deposits": 0.0,
+            "deposits": [],
+            "start_date": timeutil.now().date().isoformat(),
+        }
+    )
+    return {
+        "removed": removed,
+        "baseline": saved.get("baseline"),
+        "start_date": saved.get("start_date"),
+    }
+
+
 def reset_demo_local_data() -> dict:
     """Back-compat wrapper for DEMO-only local wipes."""
     if config.T212_ENV != "DEMO":
