@@ -902,6 +902,51 @@ def liquidate_all_positions() -> dict:
     }
 
 
+def sell_all_holdings() -> dict:
+    """Market-sell every tradeable position. Keeps AI memory and performance history."""
+    liquidated = liquidate_all_positions()
+    executed = []
+    for trade in liquidated.get("executed") or []:
+        entry = {
+            "type": "exit",
+            "ticker": trade["ticker"],
+            "action": "sell",
+            "quantity": trade["quantity"],
+            "price": trade["price"],
+            "amount": trade["amount"],
+            "reason": "Manual sell-all from Performance",
+            "env": config.T212_ENV,
+            "where": config.T212_ENV,
+            "order_id": trade.get("order_id"),
+            "status": trade.get("status"),
+        }
+        journal.log_trade(entry)
+        executed.append({**trade, **entry})
+
+    try:
+        account, positions = t212.portfolio_view()
+        performance.record_snapshot(account)
+    except Exception:
+        account, positions = None, []
+
+    skipped = list(liquidated.get("skipped") or [])
+    notes = [f"Sold {len(executed)} position(s)"]
+    if skipped:
+        notes.append(f"Skipped {len(skipped)} sell(s)")
+    if not executed and not skipped:
+        notes = ["No tradeable positions to sell"]
+
+    return {
+        "executed": executed,
+        "skipped": skipped,
+        "cancelled": liquidated.get("cancelled") or [],
+        "account": account,
+        "positions": positions,
+        "notes": notes,
+        "timestamp": timeutil.now_iso(),
+    }
+
+
 def reset_portfolio() -> dict:
     """Stop autopilot, sell all tradeable holdings, and erase local AI state."""
     with _lock:

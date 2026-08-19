@@ -59,6 +59,34 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  document.querySelectorAll("form.sell-all-form").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      const env = form.dataset.env || "this account";
+      const marketOpen = form.dataset.marketOpen === "1";
+      if (!marketOpen) {
+        const still = window.confirm(
+          "Markets look closed. Sell all may fail for some or all positions. Continue anyway?"
+        );
+        if (!still) {
+          event.preventDefault();
+          return;
+        }
+      }
+      const ok = window.confirm(
+        `Are you sure? This will SELL ALL tradeable stocks/ETFs on ${env}. AI memory and performance history are kept. Pies are not sold.`
+      );
+      if (!ok) {
+        event.preventDefault();
+        return;
+      }
+      const button = form.querySelector("button[type='submit']");
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Selling…";
+      }
+    });
+  });
+
   // Floating Why? popovers on History — no table layout shift.
   const whyPopovers = Array.from(document.querySelectorAll(".why-popover"));
   function closeAllWhy(except = null) {

@@ -199,6 +199,7 @@ def memory_page(
     tracking: str | None = None,
     copied: int = 0,
     imported: int = 0,
+    wiped: int = 0,
     error: str | None = None,
 ):
     return templates.TemplateResponse(
@@ -213,6 +214,7 @@ def memory_page(
             "tracking_saved": tracking,
             "copied": bool(copied),
             "imported": bool(imported),
+            "wiped": bool(wiped),
             "error": error,
         },
     )
@@ -222,6 +224,12 @@ def memory_page(
 def memory_unlock_tickers():
     memory.clear_ticker_scars()
     return RedirectResponse(url="/memory?cleared=1", status_code=303)
+
+
+@app.post("/memory/clear")
+def memory_clear_all():
+    memory.clear_all()
+    return RedirectResponse(url="/memory?wiped=1", status_code=303)
 
 
 @app.post("/memory/skip-tracking")
@@ -287,6 +295,8 @@ def performance_page(
     deposit_saved: int = 0,
     withdrawal_saved: int = 0,
     sell_done: int = 0,
+    liquidate_done: int = 0,
+    liquidate_error: str | None = None,
 ):
     capital = performance.load_capital()
     try:
@@ -310,6 +320,12 @@ def performance_page(
             "sell_done": bool(sell_done),
             "error": None,
             "sell_result": None,
+            "market": _market_status(),
+            "liquidate_done": bool(liquidate_done),
+            "liquidate_result": None,
+            "liquidate_error": liquidate_error,
+            "liquidate_sold": 0,
+            "liquidate_skipped": 0,
         },
     )
 
@@ -367,6 +383,12 @@ def performance_sell_for_withdrawal(request: Request, amount: str = Form("")):
             "sell_done": False,
             "error": None,
             "sell_result": None,
+            "market": _market_status(),
+            "liquidate_done": False,
+            "liquidate_result": None,
+            "liquidate_error": None,
+            "liquidate_sold": 0,
+            "liquidate_skipped": 0,
         }
         ctx.update(extra)
         return templates.TemplateResponse(
@@ -381,6 +403,51 @@ def performance_sell_for_withdrawal(request: Request, amount: str = Form("")):
     _ACCOUNT_CACHE["data"] = None
     _POSITIONS_CACHE["data"] = None
     return _page(sell_done=True, sell_result=result)
+
+
+@app.post("/performance/sell-all")
+def performance_sell_all(request: Request):
+    capital = performance.load_capital()
+
+    def _page(status_code: int = 200, **extra):
+        ctx = {
+            "active": "performance",
+            "env": config.T212_ENV,
+            "can_deposit": config.T212_ENV == "LIVE",
+            "demo_baseline": capital.get("baseline")
+            if config.T212_ENV == "DEMO"
+            else config.DEMO_BASELINE,
+            "demo_start_date": capital.get("start_date") or config.DEMO_START_DATE,
+            "deposit_saved": False,
+            "withdrawal_saved": False,
+            "sell_done": False,
+            "error": None,
+            "sell_result": None,
+            "market": _market_status(),
+            "liquidate_done": False,
+            "liquidate_result": None,
+            "liquidate_error": None,
+            "liquidate_sold": 0,
+            "liquidate_skipped": 0,
+        }
+        ctx.update(extra)
+        return templates.TemplateResponse(
+            request, "performance.html", ctx, status_code=status_code
+        )
+
+    try:
+        result = autopilot.sell_all_holdings()
+    except Exception as exc:
+        return _page(status_code=400, liquidate_error=str(exc))
+
+    _ACCOUNT_CACHE["data"] = None
+    _POSITIONS_CACHE["data"] = None
+    return _page(
+        liquidate_done=True,
+        liquidate_result=result,
+        liquidate_sold=len(result.get("executed") or []),
+        liquidate_skipped=len(result.get("skipped") or []),
+    )
 
 
 @app.get("/settings", response_class=HTMLResponse)

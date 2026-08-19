@@ -45,6 +45,12 @@
     Skip scars were not imported.
   </div>
   {% endif %}
+  {% if wiped %}
+  <div class="alert" style="background:var(--success-bg);border-color:rgba(34,197,94,0.3);color:#86efac">
+    AI memory wiped for {{ env }}. Thesis, plan, notes, lessons, thinking log and skip scars are gone.
+    Holdings, trades and performance were not changed.
+  </div>
+  {% endif %}
   {% if error %}
   <div class="alert alert-error"><strong>Could not update thinking.</strong> {{ error }}</div>
   {% endif %}
@@ -115,6 +121,22 @@
     </div>
   </div>
   {% endif %}
+
+  <div class="card" style="margin-bottom:1.25rem">
+    <div class="demo-reset-box" style="margin:0;padding:0;border:0">
+      <div>
+        <strong>Clear all memory</strong>
+        <p class="meta" style="margin:0.35rem 0 0">
+          Erases thesis, plan, notes, lessons, thinking log and skip scars for {{ env }}.
+          Does not sell positions or wipe trades/performance. The next cycle starts fresh.
+        </p>
+      </div>
+      <form method="post" action="/memory/clear"
+            onsubmit="return confirm('Are you sure? This will erase ALL AI memory for this environment. Holdings, trades and performance stay.');">
+        <button type="submit" class="btn-danger">Clear memory</button>
+      </form>
+    </div>
+  </div>
 
   <div class="memory-grid">
     <div class="card memory-section">

@@ -362,3 +362,10 @@ def clear_ticker_scars() -> dict:
         )
     save(data)
     return data
+
+
+def clear_all() -> dict:
+    """Wipe thesis, plan, notes, lessons, thinking log and skip scars for this env."""
+    data = dict(DEFAULT_MEMORY)
+    save(data)
+    return data
