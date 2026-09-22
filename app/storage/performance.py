@@ -317,6 +317,13 @@ def last_snapshot_before_today() -> dict | None:
 
 def record_snapshot(account: dict) -> None:
     total_value = float(account.get("total_value", 0))
+    account_total = float(account.get("account_total") or 0)
+    pies = float(account.get("pies_excluded_value") or 0)
+    # Prefer broker total minus pies so pending-order cash does not punch a hole.
+    if account_total > 0.01:
+        derived = max(0.0, account_total - pies)
+        if derived > total_value + 5:
+            total_value = derived
     if total_value <= 0:
         return
 

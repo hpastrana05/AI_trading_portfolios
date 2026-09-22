@@ -21,28 +21,38 @@ def get_account() -> dict:
     }
 
 
-def get_positions() -> list[dict]:
-    """Tradeable (non-pie) positions only. Fully pie-locked tickers are omitted."""
+def _position_quantities(pos: dict) -> tuple[float, float, float]:
+    qty_total = float(pos.get("quantity") or 0)
+    if "quantityAvailableForTrading" in pos and pos["quantityAvailableForTrading"] is not None:
+        qty_tradeable = float(pos["quantityAvailableForTrading"])
+    else:
+        qty_tradeable = qty_total
+    qty_in_pies = float(pos.get("quantityInPies") or max(0.0, qty_total - qty_tradeable))
+    return qty_total, qty_tradeable, qty_in_pies
+
+
+def _load_positions() -> tuple[list[dict], float]:
+    """Tradeable positions plus market value locked in pies."""
     data = positions.get_all_open_positions()
     result = []
+    pie_positions_value = 0.0
     for pos in data:
-        qty_total = float(pos.get("quantity") or 0)
-        if "quantityAvailableForTrading" in pos and pos["quantityAvailableForTrading"] is not None:
-            qty_tradeable = float(pos["quantityAvailableForTrading"])
-        else:
-            qty_tradeable = qty_total
-        qty_in_pies = float(pos.get("quantityInPies") or max(0.0, qty_total - qty_tradeable))
-
-        if qty_tradeable <= 1e-9:
-            continue
-
+        qty_total, qty_tradeable, qty_in_pies = _position_quantities(pos)
         price = float(pos.get("currentPrice") or 0)
         impact = pos.get("walletImpact") or {}
         total_value = float(impact.get("currentValue", qty_total * price) or 0)
         total_cost = float(impact.get("totalCost") or 0)
         total_pnl = float(impact.get("unrealizedProfitLoss") or 0)
 
-        # Scale wallet impact to the tradeable fraction when part is in pies.
+        if qty_in_pies > 1e-9:
+            if total_value and qty_total > 0:
+                pie_positions_value += total_value * (qty_in_pies / qty_total)
+            else:
+                pie_positions_value += qty_in_pies * price
+
+        if qty_tradeable <= 1e-9:
+            continue
+
         fraction = (qty_tradeable / qty_total) if qty_total > 0 else 1.0
         value = total_value * fraction if total_value else qty_tradeable * price
         cost = total_cost * fraction
@@ -61,25 +71,49 @@ def get_positions() -> list[dict]:
                 "pnl_pct": pnl_pct,
             }
         )
-    return result
+    return result, pie_positions_value
+
+
+def get_positions() -> list[dict]:
+    """Tradeable (non-pie) positions only. Fully pie-locked tickers are omitted."""
+    tradeable, _pie_value = _load_positions()
+    return tradeable
 
 
 def portfolio_view(
     account: dict | None = None,
     positions_list: list[dict] | None = None,
 ) -> tuple[dict, list[dict]]:
-    """Investable portfolio: free cash + tradeable positions (pies excluded)."""
+    """Investable equity excluding pies, including cash reserved for pending orders."""
     account = dict(account if account is not None else get_account())
-    positions_list = list(positions_list if positions_list is not None else get_positions())
+    if positions_list is None:
+        positions_list, pie_positions_value = _load_positions()
+    else:
+        positions_list = list(positions_list)
+        pie_positions_value = float(account.get("pie_positions_value") or 0)
+        if pie_positions_value <= 0:
+            pie_positions_value = sum(
+                float(p.get("current_price") or 0) * float(p.get("quantity_in_pies") or 0)
+                for p in positions_list
+            )
 
     invested = sum(float(p.get("value") or 0) for p in positions_list)
     cash = float(account.get("cash_available") or 0)
-    investable = cash + invested
+    reconstructed = cash + invested
     account_total = float(account.get("account_total") or 0)
     cash_in_pies = float(account.get("cash_in_pies") or 0)
+    pies = cash_in_pies + pie_positions_value
+
+    # T212 totalValue still includes cash blocked for open orders. Reconstructing
+    # from availableToTrade + open positions drops that cash until the fill.
+    if account_total > 0.01:
+        investable = max(0.0, account_total - pies)
+    else:
+        investable = reconstructed
 
     account["total_value"] = investable
-    account["pies_excluded_value"] = max(0.0, account_total - investable)
+    account["pies_excluded_value"] = pies
+    account["pie_positions_value"] = pie_positions_value
     account["cash_in_pies"] = cash_in_pies
     return account, positions_list
 
