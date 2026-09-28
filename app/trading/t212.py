@@ -27,7 +27,10 @@ def _position_quantities(pos: dict) -> tuple[float, float, float]:
         qty_tradeable = float(pos["quantityAvailableForTrading"])
     else:
         qty_tradeable = qty_total
-    qty_in_pies = float(pos.get("quantityInPies") or max(0.0, qty_total - qty_tradeable))
+    # Pending sells lock quantityAvailableForTrading without moving shares into pies.
+    # Never infer pies from that gap — 0 is a real explicit value, not missing.
+    raw_pies = pos.get("quantityInPies")
+    qty_in_pies = float(raw_pies) if raw_pies is not None else 0.0
     return qty_total, qty_tradeable, qty_in_pies
 
 
