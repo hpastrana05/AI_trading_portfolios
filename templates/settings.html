@@ -39,7 +39,17 @@
 
   <div class="card">
     <h2>Hard limits for {{ env }}</h2>
-    <p class="meta" style="margin-bottom:1rem">These rules are stored separately for DEMO and LIVE. Empty fields mean the AI decides freely.</p>
+    <div class="rule-help">
+      <p>
+        These limits are stored separately for DEMO and LIVE. The AI sees them in its prompt, and the engine applies them after the decision, so a suggestion cannot override a filled-in limit. Leave a field blank and that limit is off — the AI decides sizing and cash.
+      </p>
+      <ul>
+        <li><strong>Max position %</strong> — any holding above this share of the portfolio is cut. The excess weight moves to cash.</li>
+        <li><strong>Min cash %</strong> — if cash would sit below this floor, the other holdings are reduced in proportion until cash meets it.</li>
+        <li><strong>Max trades / day</strong> — counts orders already placed today. Once the cap is reached, later orders in the cycle are blocked.</li>
+        <li><strong>Max order amount</strong> — an order larger than this is scaled down to the cap. If the scaled size is too small to place, the order is skipped.</li>
+      </ul>
+    </div>
     <form method="post" action="/settings" class="settings-form">
       <div class="form-grid">
         <label>
@@ -61,10 +71,16 @@
       </div>
 
       <h3 style="margin:1.5rem 0 0.5rem;font-size:1rem">Drawdown protection</h3>
-      <p class="meta" style="margin-bottom:1rem">
-        Measured from equity peak. Leave blank to disable that level.
-        Hard stop % must be higher than safe alert %. Changing risk on the dashboard unlocks you again.
-      </p>
+      <div class="rule-help">
+        <p>
+          Drawdown is the drop from the highest trading equity seen so far: (peak − current) / peak. Deposits and withdrawals are taken out of that equity, so adding or removing cash does not by itself move the peak. Each level is optional — leave it blank to disable it. Hard stop must be higher than the safe alert.
+        </p>
+        <ul>
+          <li><strong>Safe alert</strong> — when drawdown reaches this %, risk is forced to low, minimum cash rises to the safe-mode cash floor (50% if that field is blank), and the AI is told to trade defensively. The autopilot keeps running. Safe mode clears on its own once drawdown falls below 70% of the threshold, and the risk level from before protection is restored.</li>
+          <li><strong>Hard stop</strong> — when drawdown reaches this %, the autopilot stops and risk is set to low. It stays stopped until you clear it. A market recovery does not restart it.</li>
+          <li><strong>Unlock</strong> — Clear protection, or changing risk on the dashboard, turns protection off. It stays off until drawdown eases below 70% of the active threshold. After that, protection can trigger again.</li>
+        </ul>
+      </div>
       <div class="form-grid">
         <label>
           <span>Safe alert DD %</span>

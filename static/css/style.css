@@ -528,6 +528,30 @@ a.btn-primary {
   padding: 0.8rem;
 }
 
+.rule-help {
+  margin: 0 0 1.1rem;
+  max-width: 46rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.rule-help p {
+  margin: 0 0 0.65rem;
+}
+
+.rule-help ul {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.rule-help li strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .settings-form .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
